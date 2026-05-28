@@ -23,11 +23,11 @@
     "lint": "eslint src tools"
   },
   "dependencies": {
-    "@graffiticode/parser": "^1.5.14",
     "ajv": "^8.20.0",
     "decimal.js": "^10.5.0"
   },
   "devDependencies": {
+    "@graffiticode/parser": "^1.5.14",
     "spec-md": "^3.1.0"
   }
 }

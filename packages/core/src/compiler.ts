@@ -164,6 +164,25 @@ function recordMerge(rec1, rec2) {
   return newRec;
 }
 
+// Upstream compiled output (passed as options.data for a chained task) may use
+// the standard { data, errors } envelope or be a bare value from a task
+// compiled before the envelope existed. Return the data model from either:
+// detection requires `errors` to be an array — the envelope always carries one
+// (success → `[]`, failure → non-empty), and using `data` as a discriminator
+// would misidentify legacy raw values that happen to carry a top-level `data`
+// key (e.g. l0158's `{ type: "questions", data: {...} }`). Basis records have
+// `_type`/`_entries` (not `data`/`errors`) so they are never misdetected.
+function unwrapEnvelopeData(value) {
+  if (
+    value !== null && typeof value === "object" &&
+    !Array.isArray(value) && !isRecord(value) &&
+    Array.isArray(value.errors)
+  ) {
+    return value.data;
+  }
+  return value;
+}
+
 // Visitor is the inheritance KERNEL: pure AST traversal/dispatch (`this[node.tag]`).
 // It carries no language semantics; L0000's Checker/Transformer (and every descendant
 // language's) extend it.
@@ -1239,7 +1258,10 @@ export class Transformer extends Visitor {
   }
   DATA(node, options, resume) {
     this.visit(node.elts[0], options, (e0, v0) => {
-      const upstream = options.data;
+      // Upstream may arrive as a { data, errors } envelope (chained task on a
+      // migrated language) or as a bare value (task compiled before the
+      // envelope). Read the data model from either shape.
+      const upstream = unwrapEnvelopeData(options.data);
       const hasUpstream = upstream != null
         && (isRecord(upstream) ? upstream._entries.size > 0
             : typeof upstream === "object" ? Object.keys(upstream).length > 0

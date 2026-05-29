@@ -392,4 +392,26 @@ describe("Existing functionality", () => {
       });
     });
   });
+
+  describe("DATA envelope unwrapping (backward compat)", () => {
+    test("reads the data model from a { data, errors } envelope upstream", async () => {
+      const result = await compile("data {}..", { data: { x: 1 }, errors: [] });
+      expect(result).toEqual({ x: 1 });
+    });
+
+    test("treats a bare (legacy) upstream as the data model", async () => {
+      const result = await compile("data {}..", { x: 1 });
+      expect(result).toEqual({ x: 1 });
+    });
+
+    test("falls back to the argument when upstream is empty", async () => {
+      const result = await compile("data {fallback: 1}..", {});
+      expect(result).toEqual({ fallback: 1 });
+    });
+
+    test("an errored envelope upstream (data: null) falls back to the argument", async () => {
+      const result = await compile("data {fallback: 2}..", { data: null, errors: [{ message: "boom" }] });
+      expect(result).toEqual({ fallback: 2 });
+    });
+  });
 });

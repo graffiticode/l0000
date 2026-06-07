@@ -1,4 +1,5 @@
 {
+  "publishConfig": { "access": "public" },
   "name": "@graffiticode/l0000-view",
   "version": "0.1.0",
   "description": "L0000 view — the shared View harness (inherited by child languages) plus the base JSON Form",

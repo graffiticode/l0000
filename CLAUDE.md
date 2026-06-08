@@ -107,9 +107,9 @@ Arithmetic uses `decimal.js`. The `Decimal` default-export normalization at the 
 
 ## Static asset pipeline
 
-`packages/core/tools/build-static.js` emits L0000's public assets into `packages/core/dist/static/`. Two hard constraints enforced by the script — don't undo them:
+`packages/core/tools/build-static.js` emits L0000's public assets into `packages/core/dist/static/`. Note these constraints enforced by the script — don't undo them:
 
-1. `lexicon.js` is emitted **without** a trailing semicolon. The Graffiticode console parses this file by slicing from the first `{` to end and `JSON.parse`-ing it; a trailing `;` breaks the parse.
+1. The lexicon is emitted as plain JSON in `lexicon.json` — no `lexicon.js` file. The still-deployed Graffiticode console still requests `lexicon.js`; the API server aliases that path to `lexicon.json` via an `app.get("/lexicon.js", …)` route registered before `express.static` (`packages/api/src/app.ts`). The console fetches the body, slices from the first `{`, and `JSON.parse`s it, so plain JSON works. Drop the alias route once the console migrates to `lexicon.json` (Stage 3 of the migration). Don't reintroduce the `export const` JS wrapper.
 2. `language-info.json` is enriched with an `authoring_guide` extracted from the `## Overview` section of `spec/usage-guide.md`. The build fails if the section is missing or under 100 chars, or if `spec/language-info.json` already contains an `authoring_guide` key. Treat the usage guide's `## Overview` as the source of truth for the authoring guide.
 
 ## Deployment

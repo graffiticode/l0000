@@ -1,6 +1,7 @@
 // Emits L0000's public static assets into dist/static/ — the artifacts the language
-// server exposes without auth: lexicon.js, spec.html, instructions.md, usage-guide.md,
-// language-info.json, scope.json, schema.json, template.gc.
+// server exposes without auth: lexicon.json (the legacy lexicon.js request path is aliased to
+// it by the API server), spec.html, instructions.md, usage-guide.md, language-info.json,
+// scope.json, schema.json, template.gc.
 //
 // L0000 is the root language (no parent), so its lexicon/instructions are emitted as-is.
 // Child languages will merge their parent's lexicon/instructions here (see Phase B).
@@ -11,6 +12,7 @@ import {
   copyFileSync,
   readFileSync,
   existsSync,
+  rmSync,
 } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -26,13 +28,15 @@ const outDir = join(pkgDir, "dist", "static");
 
 mkdirSync(outDir, { recursive: true });
 
-// 1. lexicon.js — the merged vocabulary. Emitted WITHOUT a trailing semicolon: the
-//    console parses this by slicing from the first "{" to end and JSON.parse-ing it, so a
-//    trailing ";" would break the parse. (Matches the basis/l000N convention.)
+// 1. lexicon — emitted as plain JSON in lexicon.json. No lexicon.js is written: the
+//    still-deployed console still requests lexicon.js, so the API server aliases that path to
+//    this file (see app.ts). Drop the alias route once the console migrates (Stage 3).
 writeFileSync(
-  join(outDir, "lexicon.js"),
-  `export const lexicon = ${JSON.stringify(lexicon, null, 2)}\n`,
+  join(outDir, "lexicon.json"),
+  `${JSON.stringify(lexicon, null, 2)}\n`,
 );
+// Remove any stale lexicon.js left by an earlier build — the asset is JSON-only now.
+rmSync(join(outDir, "lexicon.js"), { force: true });
 
 // 2. spec.html — rendered from spec.md via spec-md (html() may return a Promise).
 const specHtml = await Promise.resolve(specMarkdown.html(join(specDir, "spec.md")));

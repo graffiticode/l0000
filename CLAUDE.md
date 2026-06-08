@@ -112,6 +112,17 @@ Arithmetic uses `decimal.js`. The `Decimal` default-export normalization at the 
 1. `lexicon.js` is emitted **without** a trailing semicolon. The Graffiticode console parses this file by slicing from the first `{` to end and `JSON.parse`-ing it; a trailing `;` breaks the parse.
 2. `language-info.json` is enriched with an `authoring_guide` extracted from the `## Overview` section of `spec/usage-guide.md`. The build fails if the section is missing or under 100 chars, or if `spec/language-info.json` already contains an `authoring_guide` key. Treat the usage guide's `## Overview` as the source of truth for the authoring guide.
 
+## Deployment
+
+The server ships as a single Docker image (`Dockerfile`, `node:22-alpine`) deployed to Cloud Run as service `l0000` in project `graffiticode`. The image: `npm ci` from the lockfile → `npm run build` (the full core→static→api→view→embed→assemble chain) → `npm prune --omit=dev` (runtime only runs compiled JS, so devDeps are dropped) → `npm start`. `NODE_ENV=production`, `EXPOSE 50000`.
+
+Three root scripts drive GCP (require `gcloud` auth + project access):
+- `npm run gcp:build` — `gcloud builds submit` against `cloudbuild.yaml` (docker build → push to `gcr.io/graffiticode/l0000:$COMMIT_SHA` → `gcloud run deploy`).
+- `npm run gcp:deploy` — source-based `gcloud run deploy` (no explicit Cloud Build config), `--allow-unauthenticated`.
+- `npm run gcp:logs` — tail the Cloud Run logs.
+
+`cloudbuild.yaml` substitutions: `_DEPLOY_REGION=us-central1`, `_AUTH_URL=https://auth.graffiticode.org` (injected as the `AUTH_URL` env var on the deployed service). Cloud Run injects `PORT`; the server reads it (default `50000`). The service is deployed `--allow-unauthenticated` — matching the app's own "static assets and `/compile` are public" posture.
+
 ## Conventions
 
 - SPDX `// SPDX-License-Identifier: MIT` headers on `.ts` source files.

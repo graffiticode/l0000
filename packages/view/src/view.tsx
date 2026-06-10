@@ -63,6 +63,11 @@ export const View = ({ Form }: { Form: FormComponent }) => {
 
   const [state] = useState(() =>
     createState<any>({}, (data, { type, args }) => {
+      console.log(
+        "L0000 View()",
+        "type=" + type,
+        "args=" + JSON.stringify(args, null, 2),
+      );
       switch (type) {
         case "init":
           return args;
@@ -114,7 +119,7 @@ export const View = ({ Form }: { Form: FormComponent }) => {
   }, [JSON.stringify(state.data)]);
 
   const getDataResp = useSWR(
-    doGetData && accessToken && id ? { accessToken, id } : null,
+    doGetData && id ? { accessToken, id } : null,
     getData,
   );
   if (getDataResp.data !== undefined) {
@@ -125,7 +130,7 @@ export const View = ({ Form }: { Form: FormComponent }) => {
   }
 
   const compileResp = useSWR(
-    doCompile && accessToken && id ? { accessToken, id, data: state.data } : null,
+    doCompile && id ? { accessToken, id, data: state.data } : null,
     compile,
   );
   if (compileResp.data !== undefined) {

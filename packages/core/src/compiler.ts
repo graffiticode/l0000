@@ -7,14 +7,57 @@ const Decimal: any = (DecimalImport as any)?.default ?? DecimalImport;
 import crypto from 'crypto';
 import { validateAgainstSchema, getLanguageSchema } from "./schema-validator.js";
 
+// Decrypts secret values written by the console. Must stay in lockstep with
+// console src/lib/secret-crypto.ts. Understands two ciphertext formats:
+//   legacy   : <ivHex>:<encHex>                 (AES-256-CBC, deterministic IV)
+//   versioned: v<N>:<ivHex>:<ctHex>:<tagHex>    (AES-256-GCM, authenticated)
+// Keyring: v1 = GRAFFITICODE_SECRET_KEY; v2+ from GRAFFITICODE_SECRET_KEYS JSON
+// e.g. {"2":"<secret2>"}. This service only decrypts — the console encrypts.
+function keyForVersion(version: number): string | null {
+  if (version === 1) return process.env.GRAFFITICODE_SECRET_KEY || null;
+  const raw = process.env.GRAFFITICODE_SECRET_KEYS;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw)[String(version)] || null;
+  } catch {
+    return null;
+  }
+}
+
+function deriveAesKey(secret: string): Buffer {
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
 function decrypt(ciphertext) {
-  const key = process.env.GRAFFITICODE_SECRET_KEY;
-  if (!key) return ciphertext;
+  if (typeof ciphertext !== 'string') return ciphertext;
+
+  const versioned = ciphertext.match(/^v(\d+):/);
+  if (versioned) {
+    const version = parseInt(versioned[1], 10);
+    const [, ivHex, ctHex, tagHex] = ciphertext.split(':');
+    const secret = keyForVersion(version);
+    if (!secret || !ivHex || !ctHex || !tagHex) return ciphertext;
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', deriveAesKey(secret), Buffer.from(ivHex, 'hex'));
+      decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+      const dec = Buffer.concat([decipher.update(Buffer.from(ctHex, 'hex')), decipher.final()]);
+      return dec.toString('utf8');
+    } catch {
+      return ciphertext; // wrong key or tampered — stay lenient
+    }
+  }
+
+  const secret = keyForVersion(1);
+  if (!secret) return ciphertext;
   const [ivHex, encHex] = ciphertext.split(':');
   if (!ivHex || !encHex) return ciphertext;
-  const keyHash = crypto.createHash('sha256').update(key).digest();
-  const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, Buffer.from(ivHex, 'hex'));
-  return decipher.update(Buffer.from(encHex, 'hex')) + decipher.final('utf8');
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-cbc', deriveAesKey(secret), Buffer.from(ivHex, 'hex'));
+    const dec = Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]);
+    return dec.toString('utf8');
+  } catch {
+    return ciphertext;
+  }
 }
 reserveCodeRange(1000, 1999, "compile");
 messages[1001] = "Node ID %1 not found in pool.";

@@ -12,7 +12,7 @@
 // (so recompiles operate on real data, not the envelope) and threads `errors` to the Form
 // alongside it.
 import { useEffect, useState } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, CSSProperties } from "react";
 import useSWR from "swr";
 import { createState } from "./state";
 import { compile, getData } from "./swr/fetchers";
@@ -141,5 +141,54 @@ export const View = ({ Form }: { Form: FormComponent }) => {
   }
 
   const formState = { data: state.data, errors, apply: state.apply };
-  return hasRenderable(state.data, errors) ? <Form state={formState} /> : <div />;
+
+  // Render priority: real content first; otherwise surface why there's none.
+  // A getData failure (e.g. a stale/expired token 401ing a public read) used to
+  // fall through to a blank `<div/>` with no console output — indistinguishable
+  // from "still loading" and impossible to diagnose. Show the error (and a
+  // retry) instead. Once data has loaded, a later revalidation error is ignored
+  // so the form isn't replaced by an error screen.
+  if (hasRenderable(state.data, errors)) {
+    return <Form state={formState} />;
+  }
+  if (getDataResp.error) {
+    return (
+      <div role="alert" style={MESSAGE_STYLE}>
+        <p style={{ margin: 0, fontWeight: 600 }}>Couldn’t load this form.</p>
+        <p style={{ margin: "4px 0 12px", color: "#555" }}>
+          {String((getDataResp.error as { message?: string })?.message ?? getDataResp.error)}
+        </p>
+        <button type="button" style={RETRY_STYLE} onClick={() => getDataResp.mutate()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (getDataResp.isLoading) {
+    return (
+      <div role="status" aria-live="polite" style={MESSAGE_STYLE}>
+        Loading…
+      </div>
+    );
+  }
+  return <div />;
+};
+
+const MESSAGE_STYLE: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  height: "100%",
+  padding: "24px",
+  textAlign: "center",
+  font: "14px/1.4 system-ui, sans-serif",
+};
+
+const RETRY_STYLE: CSSProperties = {
+  padding: "6px 14px",
+  border: "1px solid #888",
+  borderRadius: "4px",
+  background: "#fff",
+  cursor: "pointer",
 };

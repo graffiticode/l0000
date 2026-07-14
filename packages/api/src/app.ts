@@ -45,6 +45,12 @@ export const createApp = ({ authUrl }: { authUrl?: string } = {}) => {
   }
 
   app.use(cors());
+  // Let the /form embed bundle load inside COEP-isolated hosts (claude.ai / chatgpt.com
+  // widget iframes). Without CORP the browser blocks the frame ("This content is blocked").
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  });
   app.use(express.json({ limit: "50mb" }));
   app.use(methodOverride());
 

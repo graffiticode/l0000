@@ -31,10 +31,12 @@ expression..
 ```
 
 - Zero or more `let` declarations bind names to values. Each `let` is terminated with `..`.
-- A single top-level expression produces the program's result. It is also terminated with `..`.
+- One or more top-level expressions follow, forming an expression block. They are evaluated in order and the last one produces the program's result. Consecutive expressions are written with no separator between them; only the last carries the `..`.
 - Block comments are `/* ... */`. There is no line-comment syntax.
 
 The terminator `..` is mandatory. Bare expressions without `..` will not parse.
+It ends the program as a whole, so it belongs only at the very end (and after
+each `let`) — text after it is discarded silently rather than flagged.
 
 ## Core syntax
 

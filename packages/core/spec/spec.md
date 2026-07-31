@@ -27,14 +27,36 @@ This document defines the **Graffiticode Core Language Specification**, covering
 
 ## Programs
 
-A **Graffiticode program** is a sequence of one or more `let` declarations, followed by a single top-level expression, and terminated with `..`.
+A **Graffiticode program** is zero or more `let` declarations followed by an
+**expression block** — one or more top-level expressions — and terminated with
+`..`. The block's expressions are evaluated in order and the value of the last
+one is the program's result.
 
 ```
 let double = <x: mul 2 x>..
 map (double) [1 2 3]..
 ```
 
-The top-level expression must always be followed by `..`.
+Internally this is a `PROG` node wrapping a single `EXPRS` node whose elements
+are the block's expressions; the compiler evaluates each in turn and returns the
+last. A program with several expressions is the normal case, not a special one:
+
+```
+set-var "greeting" "hello"
+print get-var "greeting"..
+```
+
+parses to `PROG → EXPRS(2): [SET_VAR, PRINT]`.
+
+Expressions within a block carry **no separator**. An expression ends when its
+arity is satisfied, and the next begins immediately; `add 1 2 add 3 4` is two
+expressions, not one.
+
+`..` terminates the program, and additionally each `let` binding. It is not an
+expression terminator, and it does not appear between the expressions of a
+block. Parsing stops at the program's `..`: any text after it is discarded
+without raising an error, so a stray `..` after the first expression silently
+truncates the program to that expression.
 
 ## Expressions
 

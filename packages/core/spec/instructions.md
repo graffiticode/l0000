@@ -7,15 +7,21 @@ This is the core Graffiticode language — a functional language with prefix not
 
 ## Response Requirements
 
-- **IMPORTANT**: Whatever the user request is, the response should always be a complete Graffiticode program terminated with `..`.
-- Programs consist of zero or more `let` declarations followed by a single top-level expression, all terminated with `..`.
+- **IMPORTANT**: Whatever the user request is, the response should always be a complete Graffiticode program ending with `..`.
+- A program is zero or more `let` declarations followed by an **expression block**: one or more expressions evaluated in order. The value of the last expression is the program's result.
 
 ## Program Structure
 
 ```
 let name = value..
+expression
 expression..
 ```
+
+A program has exactly one `..` at the very end, plus one after each `let`
+binding. **Everything after the program's final `..` is discarded — silently,
+with no error.** Writing `..` after an expression that is not a `let` therefore
+throws away the rest of the program.
 
 ### Minimal example
 
@@ -30,13 +36,34 @@ let double = <x: mul 2 x>..
 map (double) [1 2 3]..
 ```
 
+### An expression block
+
+Expressions in a block are written one after another with **no separator
+between them** — no `..`, no comma. An expression ends as soon as its arguments
+are supplied, and the next expression simply follows:
+
+```
+set-var "greeting" "hello"
+print get-var "greeting"..
+```
+
+That is two expressions: `set-var` takes 2 arguments and is complete after
+`"hello"`, then `print …` follows as the next expression and its value is the
+program's result. Writing `set-var "greeting" "hello"..` instead would end the
+program at that point and discard the `print` line.
+
+A complete expression is **not** a complete program. When a program needs
+several steps — bind a variable, then build the result — write them as
+consecutive expressions in one block and terminate only at the end.
+
 ## Syntax Rules
 
 - **Prefix notation**: Functions are applied by writing the function name followed by its arguments: `add 1 2`
 - **Fixed arity**: Every function has a known number of parameters, so applications parse unambiguously without grouping: `add 1 mul 2 3` parses as `add(1, mul(2, 3))`
 - **Parentheses defer application**: `map (double) [1 2 3]` passes `double` as a value rather than applying it
-- **Program terminator**: Every program ends with `..`
+- **Program terminator**: A program ends with `..`, and `..` appears nowhere else except after `let` bindings. It terminates the whole program, not an expression — text following it is dropped without an error.
 - **Let terminator**: Every `let` binding ends with `..`
+- **No expression separator**: Consecutive expressions in a block are juxtaposed. Argument boundaries come from arity alone, so `add 1 2 add 3 4` is two complete expressions, not one
 - **Comments**: Block comments are enclosed in `/* ... */`
 
 ## Data Types

@@ -3,10 +3,13 @@
 // A child language's core extends these classes:
 //   import { Checker, Transformer, Compiler } from "@graffiticode/l0000";
 //   class MyChecker extends Checker { HELLO(node, options, resume) { ... } }
-// and merges its lexicon over `lexicon`.
+// and merges its lexicon over `lexicon` with `mergeLexicon`, which refuses to let a
+// child word shadow a base one unless the override is declared.
 
 export { Visitor, Checker, Transformer, Renderer, Compiler } from "./compiler.js";
 export { lexicon } from "./lexicon.js";
+export { mergeLexicon } from "./merge-lexicon.js";
+export type { MergeLexiconOptions } from "./merge-lexicon.js";
 export {
   validateAgainstSchema,
   getLanguageSchema,

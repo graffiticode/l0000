@@ -180,6 +180,70 @@ describe("View", () => {
     });
   });
 
+  test('formModel "loaded": an uncontrolled Form is not re-seeded by its own edits', async () => {
+    // THE FLASH. L0166's TableEditor rebuilds its whole ProseMirror document — and puts the
+    // caret back in A1 — whenever the IDENTITY of interaction.cells changes. Handing it back
+    // the edit it just reported re-seeds it on every commit: the grid redraws and the
+    // selection jumps. The live model must still carry the edit for postMessage and compiles.
+    setSearch("?id=abc123");
+    stubApi({ stored: { interaction: { cells: { A1: { text: "1" } } } } });
+    const View = await loadView();
+
+    render(<Wrapper><View Form={CountingForm} formModel="loaded" /></Wrapper>);
+    await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+    await tick(50);
+
+    const seeded = lastData;
+    expect(seeded.interaction.cells.A1.text, "the stored model never reached the Form").toBe("1");
+
+    await act(async () => { apply({ type: "update", args: { interaction: { cells: { A1: { text: "7" } } } } }); });
+    await tick(120);
+
+    expect(lastData, "the Form was re-seeded from its own edit").toBe(seeded);
+  });
+
+  test('formModel "loaded" still posts and compiles the live model', async () => {
+    // Freezing what the Form RENDERS must not freeze what the harness REPORTS: the learner's
+    // edit still has to reach the host and the compiler, or the answer is lost.
+    setSearch("?id=abc123&origin=https://host.example");
+    const { compilePosts } = stubApi({ stored: { interaction: { cells: { A1: { text: "1" } } } } });
+    const posted: any[] = [];
+    const parent = { postMessage: (m: any) => posted.push(m) };
+    vi.stubGlobal("parent", parent as any);
+    Object.defineProperty(window, "parent", { value: parent, configurable: true });
+    const View = await loadView();
+
+    render(<Wrapper><View Form={CountingForm} formModel="loaded" /></Wrapper>);
+    await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+    await tick(50);
+
+    await act(async () => { apply({ type: "update", args: { cells: { A1: { text: "7" } } } }); });
+    await tick(120);
+
+    expect(compilePosts.at(-1)?.cells, "the edit never reached the compiler").toEqual({
+      A1: { text: "7" },
+    });
+    const updates = posted.filter((m) => m.type === "data-updated");
+    expect(updates.at(-1)?.data.cells, "the edit never reached the host").toEqual({
+      A1: { text: "7" },
+    });
+  });
+
+  test('formModel defaults to "live": a controlled Form still sees every change', async () => {
+    setSearch("?id=abc123");
+    stubApi({ stored: { cells: { A1: "1" } } });
+    const View = await loadView();
+
+    render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+    await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+    await tick(50);
+
+    await act(async () => { apply({ type: "update", args: { cells: { A1: "7" } } }); });
+    await tick(120);
+
+    expect(lastData.cells, "the default stopped reflecting edits to the Form").toEqual({ A1: "7" });
+  });
+
   test("a language `reduce` claims actions and falls through for the rest", async () => {
     // L0179 needs `update` to merge cell text into interaction.cells rather than onto the top
     // level. Anything it does not claim must still get the generic behaviour.

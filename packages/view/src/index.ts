@@ -8,5 +8,6 @@ export type {
   CompileError,
   StateAction,
   LanguageReducer,
+  FormModel,
 } from "./view";
 export { Form } from "./components/form";

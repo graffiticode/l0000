@@ -29,9 +29,30 @@
 // `response`  a learner's answer; merges, and requests a recompile
 // `focus`     selection tracking; merges under `focus` and does NOT recompile
 //
+// `loaded`   the stored model arriving from getData. Merges exactly like `compiled`; it is a
+//            separate type only so the harness can tell an EXTERNAL load from the echo of an
+//            edit the Form itself just reported (see `formModel` below).
+//
 // `response` and `focus` were previously unhandled, so they fell to the `default:` branch and
 // returned the model UNCHANGED — silently discarding every answer a learner typed into an
 // L0166/L0179 spreadsheet and every response an L0175 item collected.
+//
+// ── formModel: which model the Form is rendered from ───────────────────────────────────────
+//
+// A CONTROLLED Form (the default, `formModel: "live"`) renders whatever the model currently
+// says, so it must see every change — including its own edits coming back.
+//
+// An UNCONTROLLED Form owns its own editing state and only SEEDS from the model. L0166's
+// spreadsheet Form — which L0179 injects — is one: its TableEditor builds a ProseMirror
+// document from `interaction.cells` and, whenever that object's IDENTITY changes, rebuilds the
+// whole document and puts the caret back in A1. Feeding such a Form its own reported edits
+// re-seeds it on every keystroke commit: the grid visibly redraws and the selection jumps.
+//
+// L0166 never hits this because its state lives in an untracked closure that re-renders
+// nothing — the editor is seeded once and left alone. `formModel: "loaded"` makes that
+// deliberate rather than accidental: the Form renders from the model as last loaded from
+// OUTSIDE it (`init`, `loaded`), while `update`/`response` and the compile results they
+// trigger keep updating the live model for postMessage, recompiles, and reporting.
 //
 // A language whose Form needs different semantics for one of these passes `reduce`. It is
 // consulted FIRST and returns `undefined` for anything it does not claim, so a language adds
@@ -71,8 +92,24 @@ export interface FormProps {
 
 export type FormComponent = ComponentType<FormProps>;
 
+/**
+ * Which model the Form renders from.
+ *
+ * `live`   — everything, including the Form's own edits coming back (a controlled Form).
+ * `loaded` — only the model as last loaded from outside the Form (an uncontrolled Form that
+ *            seeds itself from the model and owns its editing state thereafter).
+ */
+export type FormModel = "live" | "loaded";
+
 /** Actions that represent a user changing the form, and so warrant a recompile. */
 const RECOMPILE_ON = new Set(["update", "response"]);
+
+/**
+ * Actions that carry a model from OUTSIDE the Form, and so may re-seed an uncontrolled one.
+ * `compiled` is absent deliberately: after the initial load every compile is a response to an
+ * edit the Form itself reported, and re-seeding from it is the flash this exists to stop.
+ */
+const EXTERNAL_LOAD = new Set(["init", "loaded"]);
 
 // Normalize a response into the { data, errors } envelope. Accepts a bare value (treated
 // as data with no errors) for backward/forward compatibility.
@@ -97,6 +134,7 @@ function baseReduce(data: any, { type, args }: StateAction): any {
     case "init":
       return { ...args };
     case "compiled":
+    case "loaded":
     case "update":
     case "response":
       return { ...data, ...args };
@@ -110,12 +148,18 @@ function baseReduce(data: any, { type, args }: StateAction): any {
 
 interface ViewState {
   data: any;
+  /**
+   * What the Form is rendered from. Under `formModel: "live"` it is always `data`; under
+   * `"loaded"` its IDENTITY only changes on an external load, which is what keeps an
+   * uncontrolled Form from re-seeding itself on its own edits.
+   */
+  renderData: any;
   /** Bumped by each user edit. The compile effect keys off it, never off `data` itself. */
   compileSeq: number;
 }
 
 const makeReducer =
-  (reduce?: LanguageReducer) =>
+  (reduce: LanguageReducer | undefined, formModel: FormModel) =>
   (prev: ViewState, action: StateAction): ViewState => {
     const claimed = reduce ? reduce(prev.data, action) : undefined;
     const data = claimed !== undefined ? claimed : baseReduce(prev.data, action);
@@ -124,20 +168,34 @@ const makeReducer =
     }
     return {
       data,
+      renderData:
+        formModel === "live" || EXTERNAL_LOAD.has(action.type) ? data : prev.renderData,
       compileSeq: prev.compileSeq + (RECOMPILE_ON.has(action.type) ? 1 : 0),
     };
   };
 
-export const View = ({ Form, reduce }: { Form: FormComponent; reduce?: LanguageReducer }) => {
+export const View = ({
+  Form,
+  reduce,
+  formModel = "live",
+}: {
+  Form: FormComponent;
+  reduce?: LanguageReducer;
+  formModel?: FormModel;
+}) => {
   const [params] = useState(() => new URLSearchParams(window.location.search));
   const [id] = useState<string | undefined>(params.get("id") ?? undefined);
   const [accessToken] = useState<string | undefined>(params.get("access_token") ?? undefined);
   const [targetOrigin] = useState<string | undefined>(params.get("origin") ?? undefined);
   const [errors, setErrors] = useState<CompileError[]>([]);
 
-  const reducer = useMemo(() => makeReducer(reduce), [reduce]);
-  const [state, apply] = useReducer(reducer, undefined, () => ({ data: {}, compileSeq: 0 }));
-  const { data, compileSeq } = state;
+  const reducer = useMemo(() => makeReducer(reduce, formModel), [reduce, formModel]);
+  const [state, apply] = useReducer(reducer, undefined, () => ({
+    data: {},
+    renderData: {},
+    compileSeq: 0,
+  }));
+  const { data, renderData, compileSeq } = state;
 
   // Initialize from a `data` search param on first load.
   useEffect(() => {
@@ -177,7 +235,7 @@ export const View = ({ Form, reduce }: { Form: FormComponent; reduce?: LanguageR
   useEffect(() => {
     if (getDataResp.data === undefined) return;
     const env = asEnvelope(getDataResp.data);
-    apply({ type: "compiled", args: env.data });
+    apply({ type: "loaded", args: env.data });
     setErrors(env.errors);
   }, [getDataResp.data]);
 
@@ -215,7 +273,12 @@ export const View = ({ Form, reduce }: { Form: FormComponent; reduce?: LanguageR
     };
   }, [compileSeq]);
 
-  const formState = useMemo(() => ({ data, errors, apply }), [data, errors]);
+  // The Form sees `renderData`; everything else here (postMessage, recompiles) uses the live
+  // `data`. They are the same object unless the language asked for `formModel: "loaded"`, and
+  // the fallback covers the one case where they can disagree about EXISTENCE rather than
+  // content: a model that arrived without ever passing through an external load.
+  const formData = hasRenderable(renderData, []) ? renderData : data;
+  const formState = useMemo(() => ({ data: formData, errors, apply }), [formData, errors]);
 
   // Render priority: real content first; otherwise surface why there's none.
   // A getData failure (e.g. a stale/expired token 401ing a public read) used to

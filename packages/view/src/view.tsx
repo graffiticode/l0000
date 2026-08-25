@@ -1,20 +1,46 @@
 // SPDX-License-Identifier: MIT
 //
 // View is the SHARED, inherited front-end harness. It manages form state, drives
-// compile/getData via SWR, reads its inputs from the URL search params, and posts state
-// to the host via window.parent.postMessage — so it works both embedded in an iframe and
-// standalone. It is parameterized by the language-specific `Form`: child languages import
-// this `View` and inject their own `Form` (the only language-specific UX). L0000 ships the
-// base `Form` (JSON), so its own embed mounts `<View Form={Form} />`.
+// compile/getData, reads its inputs from the URL search params, and posts state to the host
+// via window.parent.postMessage — so it works both embedded in an iframe and standalone. It
+// is parameterized by the language-specific `Form`: child languages import this `View` and
+// inject their own `Form` (the only language-specific UX). L0000 ships the base `Form` (JSON),
+// so its own embed mounts `<View Form={Form} />`.
 //
-// Compile/getData responses use the envelope `{ data, errors }`: successful output in
-// `data`, compile errors in `errors`. The View stores `data` as the form's data model
-// (so recompiles operate on real data, not the envelope) and threads `errors` to the Form
-// alongside it.
-import { useEffect, useState } from "react";
+// Compile/getData responses use the envelope `{ data, errors }`: successful output in `data`,
+// compile errors in `errors`. The View stores `data` as the form's data model (so recompiles
+// operate on real data, not the envelope) and threads `errors` to the Form alongside it.
+//
+// ── State ──────────────────────────────────────────────────────────────────────────────────
+//
+// The data model lives in React state and every `apply` re-renders. It used to live in an
+// EXTERNAL mutable store (`createState`) that React did not track, which meant a form seeded
+// from the `?data=` search param never appeared at all: the seed mutated the store from an
+// effect, nothing re-rendered, and the harness kept showing the empty `<div/>` it had already
+// committed. Keep state here, and keep the reducer PURE — it is re-run under StrictMode.
+//
+// ── The action protocol ────────────────────────────────────────────────────────────────────
+//
+// `init`      replace the model (a fresh load)
+// `compiled`  MERGE the compile result over the model. It must not replace: a compile response
+//             carries only what the compiler produced, so replacing discards client-side state
+//             (focus, in-progress entries) and re-initializes the whole form on every edit.
+// `update`    a user edit; merges, and requests a recompile
+// `response`  a learner's answer; merges, and requests a recompile
+// `focus`     selection tracking; merges under `focus` and does NOT recompile
+//
+// `response` and `focus` were previously unhandled, so they fell to the `default:` branch and
+// returned the model UNCHANGED — silently discarding every answer a learner typed into an
+// L0166/L0179 spreadsheet and every response an L0175 item collected.
+//
+// A language whose Form needs different semantics for one of these passes `reduce`. It is
+// consulted FIRST and returns `undefined` for anything it does not claim, so a language adds
+// cases without restating the generic ones. This exists because L0179 injects L0166's
+// spreadsheet Form, whose `update` must merge cell text into `data.interaction.cells` rather
+// than onto the top level — a shape that has no business being hardcoded here.
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import useSWR from "swr";
-import { createState } from "./state";
 import { compile, getData } from "./swr/fetchers";
 import "./index.css";
 
@@ -24,15 +50,29 @@ export interface CompileError {
   to?: number;
 }
 
+export interface StateAction {
+  type: string;
+  args?: any;
+}
+
+/**
+ * A language's extra reducer cases. Return the next data model to claim an action, or
+ * `undefined` to fall through to the generic handling below.
+ */
+export type LanguageReducer = (data: any, action: StateAction) => any | undefined;
+
 export interface FormProps {
   state: {
     data: any;
     errors: CompileError[];
-    apply: (action: { type: string; args?: any }) => void;
+    apply: (action: StateAction) => void;
   };
 }
 
 export type FormComponent = ComponentType<FormProps>;
+
+/** Actions that represent a user changing the form, and so warrant a recompile. */
+const RECOMPILE_ON = new Set(["update", "response"]);
 
 // Normalize a response into the { data, errors } envelope. Accepts a bare value (treated
 // as data with no errors) for backward/forward compatibility.
@@ -52,95 +92,130 @@ function hasRenderable(data: any, errors: CompileError[]): boolean {
   return true;
 }
 
-export const View = ({ Form }: { Form: FormComponent }) => {
-  const params = new URLSearchParams(window.location.search);
+function baseReduce(data: any, { type, args }: StateAction): any {
+  switch (type) {
+    case "init":
+      return { ...args };
+    case "compiled":
+    case "update":
+    case "response":
+      return { ...data, ...args };
+    case "focus":
+      return { ...data, focus: args };
+    default:
+      console.error(`Unimplemented action type: ${type}`);
+      return data;
+  }
+}
+
+interface ViewState {
+  data: any;
+  /** Bumped by each user edit. The compile effect keys off it, never off `data` itself. */
+  compileSeq: number;
+}
+
+const makeReducer =
+  (reduce?: LanguageReducer) =>
+  (prev: ViewState, action: StateAction): ViewState => {
+    const claimed = reduce ? reduce(prev.data, action) : undefined;
+    const data = claimed !== undefined ? claimed : baseReduce(prev.data, action);
+    if (data === prev.data || JSON.stringify(data) === JSON.stringify(prev.data)) {
+      return prev;
+    }
+    return {
+      data,
+      compileSeq: prev.compileSeq + (RECOMPILE_ON.has(action.type) ? 1 : 0),
+    };
+  };
+
+export const View = ({ Form, reduce }: { Form: FormComponent; reduce?: LanguageReducer }) => {
+  const [params] = useState(() => new URLSearchParams(window.location.search));
   const [id] = useState<string | undefined>(params.get("id") ?? undefined);
   const [accessToken] = useState<string | undefined>(params.get("access_token") ?? undefined);
   const [targetOrigin] = useState<string | undefined>(params.get("origin") ?? undefined);
-  const [doGetData, setDoGetData] = useState(false);
-  const [doCompile, setDoCompile] = useState(false);
   const [errors, setErrors] = useState<CompileError[]>([]);
 
-  const [state] = useState(() =>
-    createState<any>({}, (data, { type, args }) => {
-      console.log(
-        "L0000 View()",
-        "type=" + type,
-        "args=" + JSON.stringify(args, null, 2),
-      );
-      switch (type) {
-        case "init":
-          return args;
-        case "compiled":
-          // The compiled result is the new data model (may be a scalar, list, or record).
-          return args;
-        case "update": {
-          const merged = { ...data, ...args };
-          if (JSON.stringify(merged) !== JSON.stringify(data)) {
-            setDoCompile(true);
-            if (targetOrigin) {
-              window.parent.postMessage({ focus: { type: "update", value: merged } }, targetOrigin);
-            }
-          }
-          return merged;
-        }
-        default:
-          console.error(`Unimplemented action type: ${type}`);
-          return data;
-      }
-    }),
-  );
+  const reducer = useMemo(() => makeReducer(reduce), [reduce]);
+  const [state, apply] = useReducer(reducer, undefined, () => ({ data: {}, compileSeq: 0 }));
+  const { data, compileSeq } = state;
 
   // Initialize from a `data` search param on first load.
   useEffect(() => {
-    const data = params.get("data");
-    if (data) {
-      state.apply({ type: "init", args: JSON.parse(data) });
-    }
+    const seed = params.get("data");
+    if (seed) apply({ type: "init", args: JSON.parse(seed) });
   }, []);
 
   // Announce load to the host.
   useEffect(() => {
     if (targetOrigin) {
-      window.parent.postMessage({ type: "onload", data: state.data }, targetOrigin);
+      window.parent.postMessage({ type: "onload", data }, targetOrigin);
     }
   }, []);
-
-  // Fetch stored data when an id is present.
-  useEffect(() => {
-    if (id) setDoGetData(true);
-  }, [id]);
 
   // Post state to the host whenever it changes.
   useEffect(() => {
     if (targetOrigin) {
-      window.parent.postMessage({ type: "data-updated", data: state.data }, targetOrigin);
+      window.parent.postMessage({ type: "data-updated", data }, targetOrigin);
     }
-  }, [JSON.stringify(state.data)]);
+  }, [JSON.stringify(data)]);
 
-  const getDataResp = useSWR(
-    doGetData && id ? { accessToken, id } : null,
-    getData,
-  );
-  if (getDataResp.data !== undefined) {
+  // Fetch stored data when an id is present.
+  //
+  // Revalidation is off: this is a one-shot load, and a background refetch on window focus
+  // would re-apply the STORED model over whatever the learner has since entered — the form
+  // silently reverting when you tab away and back.
+  const getDataResp = useSWR(id ? { accessToken, id } : null, getData, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
+  });
+
+  // Apply the loaded data in an EFFECT. Applying it during render (as this used to) both
+  // mutated state mid-render and re-ran on every subsequent render, because the SWR result
+  // stays populated — the old code only escaped that loop by flipping its own fetch key to
+  // null, which is what let a warm cache entry re-apply a stale model later.
+  useEffect(() => {
+    if (getDataResp.data === undefined) return;
     const env = asEnvelope(getDataResp.data);
-    state.apply({ type: "compiled", args: env.data });
+    apply({ type: "compiled", args: env.data });
     setErrors(env.errors);
-    setDoGetData(false);
-  }
+  }, [getDataResp.data]);
 
-  const compileResp = useSWR(
-    doCompile && id ? { accessToken, id, data: state.data } : null,
-    compile,
-  );
-  if (compileResp.data !== undefined) {
-    const env = asEnvelope(compileResp.data);
-    state.apply({ type: "compiled", args: env.data });
-    setErrors(env.errors);
-    setDoCompile(false);
-  }
+  // Recompile after a user edit.
+  //
+  // Deliberately NOT SWR: a compile is a mutation, not a cacheable query. Keying it on the
+  // data (as this used to) meant returning a cell to a value it already held replayed an
+  // OLDER compiled snapshot straight out of the cache, reverting the sheet. A bare request
+  // with last-write-wins ordering has no cache to go stale.
+  const latestCompile = useRef(0);
+  useEffect(() => {
+    if (compileSeq === 0 || !id) return;
+    const seq = ++latestCompile.current;
+    if (targetOrigin) {
+      window.parent.postMessage({ focus: { type: "update", value: data } }, targetOrigin);
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const out = await compile({ accessToken, id, data });
+        // Drop a response that a newer edit has already superseded, so a slow compile can
+        // never overwrite a faster one that started later.
+        if (cancelled || seq !== latestCompile.current) return;
+        const env = asEnvelope(out);
+        apply({ type: "compiled", args: env.data });
+        setErrors(env.errors);
+      } catch (err: any) {
+        if (!cancelled && seq === latestCompile.current) {
+          setErrors([{ message: String(err?.message ?? err) }]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [compileSeq]);
 
-  const formState = { data: state.data, errors, apply: state.apply };
+  const formState = useMemo(() => ({ data, errors, apply }), [data, errors]);
 
   // Render priority: real content first; otherwise surface why there's none.
   // A getData failure (e.g. a stale/expired token 401ing a public read) used to
@@ -148,7 +223,9 @@ export const View = ({ Form }: { Form: FormComponent }) => {
   // from "still loading" and impossible to diagnose. Show the error (and a
   // retry) instead. Once data has loaded, a later revalidation error is ignored
   // so the form isn't replaced by an error screen.
-  if (hasRenderable(state.data, errors)) {
+  const retry = useCallback(() => getDataResp.mutate(), [getDataResp]);
+
+  if (hasRenderable(data, errors)) {
     return <Form state={formState} />;
   }
   if (getDataResp.error) {
@@ -158,7 +235,7 @@ export const View = ({ Form }: { Form: FormComponent }) => {
         <p style={{ margin: "4px 0 12px", color: "#555" }}>
           {String((getDataResp.error as { message?: string })?.message ?? getDataResp.error)}
         </p>
-        <button type="button" style={RETRY_STYLE} onClick={() => getDataResp.mutate()}>
+        <button type="button" style={RETRY_STYLE} onClick={retry}>
           Retry
         </button>
       </div>

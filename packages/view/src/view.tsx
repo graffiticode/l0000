@@ -146,6 +146,30 @@ function baseReduce(data: any, { type, args }: StateAction): any {
   }
 }
 
+/**
+ * Structural equality, used to decide whether an action actually changed the model.
+ *
+ * This replaces `JSON.stringify(a) === JSON.stringify(b)`, which serialized the ENTIRE model
+ * twice on every dispatched action. For a spreadsheet of a few hundred cells that is real work
+ * on a path that runs on every keystroke, focus change and response — and it is work done to
+ * answer a question that usually resolves on the first differing key.
+ *
+ * Unlike the stringify comparison this is insensitive to key ORDER, which is the intended
+ * meaning: a model whose keys were rebuilt in a different order has not changed.
+ */
+const deepEqual = (a: any, b: any): boolean => {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    return a.every((item, i) => deepEqual(item, b[i]));
+  }
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k]));
+};
+
 interface ViewState {
   data: any;
   /**
@@ -156,6 +180,11 @@ interface ViewState {
   renderData: any;
   /** Bumped by each user edit. The compile effect keys off it, never off `data` itself. */
   compileSeq: number;
+  /**
+   * Bumped whenever `data` changes. Effects that need to run on a real change key off this
+   * instead of off a serialization of the whole model.
+   */
+  version: number;
 }
 
 const makeReducer =
@@ -163,7 +192,7 @@ const makeReducer =
   (prev: ViewState, action: StateAction): ViewState => {
     const claimed = reduce ? reduce(prev.data, action) : undefined;
     const data = claimed !== undefined ? claimed : baseReduce(prev.data, action);
-    if (data === prev.data || JSON.stringify(data) === JSON.stringify(prev.data)) {
+    if (data === prev.data || deepEqual(data, prev.data)) {
       return prev;
     }
     return {
@@ -171,6 +200,7 @@ const makeReducer =
       renderData:
         formModel === "live" || EXTERNAL_LOAD.has(action.type) ? data : prev.renderData,
       compileSeq: prev.compileSeq + (RECOMPILE_ON.has(action.type) ? 1 : 0),
+      version: prev.version + 1,
     };
   };
 
@@ -194,8 +224,9 @@ export const View = ({
     data: {},
     renderData: {},
     compileSeq: 0,
+    version: 0,
   }));
-  const { data, renderData, compileSeq } = state;
+  const { data, renderData, compileSeq, version } = state;
 
   // Initialize from a `data` search param on first load.
   useEffect(() => {
@@ -211,11 +242,16 @@ export const View = ({
   }, []);
 
   // Post state to the host whenever it changes.
+  //
+  // Keyed on the reducer's own version counter. It used to be keyed on `JSON.stringify(data)`,
+  // which serialized the whole model on EVERY render rather than only when something changed —
+  // and the reducer already knows the answer, because it returns `prev` untouched when an action
+  // changes nothing.
   useEffect(() => {
     if (targetOrigin) {
       window.parent.postMessage({ type: "data-updated", data }, targetOrigin);
     }
-  }, [JSON.stringify(data)]);
+  }, [version]);
 
   // Fetch stored data when an id is present.
   //

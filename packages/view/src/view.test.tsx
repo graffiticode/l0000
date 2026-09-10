@@ -112,6 +112,52 @@ describe("View", () => {
     expect(compilePosts.length, "an edit was served from cache instead of recompiled").toBe(3);
   });
 
+  test("an action that changes nothing does not re-render or recompile", async () => {
+    // The reducer returns `prev` untouched when an action leaves the model equal. That check used
+    // to be two full serializations of the whole model, per action; it is structural now, and this
+    // pins the behaviour it protects rather than the mechanism.
+    setSearch("?id=abc123");
+    const { compilePosts } = stubApi({ stored: { cells: { A1: "1" } } });
+    const View = await loadView();
+
+    render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+    await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+    await tick(60);
+
+    const before = renders;
+    const compilesBefore = compilePosts.length;
+    // A fresh object each time, so identity cannot be what makes this pass.
+    for (let i = 0; i < 3; i++) {
+      await act(async () => { apply({ type: "update", args: { cells: { A1: "1" } } }); });
+      await tick(20);
+    }
+
+    expect(renders, "an unchanged model re-rendered the Form").toBe(before);
+    expect(compilePosts.length, "an unchanged model triggered a recompile").toBe(compilesBefore);
+  });
+
+  test("key order alone is not a change", async () => {
+    // The stringify comparison this replaces was key-ORDER sensitive, so a model whose keys were
+    // rebuilt in a different order counted as changed and forced a recompile. Content is what
+    // matters.
+    setSearch("?id=abc123");
+    const { compilePosts } = stubApi({ stored: { title: "Sheet" } });
+    const View = await loadView();
+
+    render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+    await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+    await tick(60);
+
+    await act(async () => { apply({ type: "update", args: { cells: { A1: "1", B1: "2" } } }); });
+    await tick(60);
+    const compilesAfterFirst = compilePosts.length;
+
+    await act(async () => { apply({ type: "update", args: { cells: { B1: "2", A1: "1" } } }); });
+    await tick(60);
+
+    expect(compilePosts.length, "reordered keys counted as a change").toBe(compilesAfterFirst);
+  });
+
   test("settles after loading — it does not re-render forever", async () => {
     setSearch("?id=abc123");
     stubApi({ stored: { title: "Sheet" } });

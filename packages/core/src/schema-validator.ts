@@ -76,7 +76,7 @@ export async function getLanguageSchema(lang) {
   try {
     res = await _fetchImpl(url);
   } catch (err) {
-    throw new Error(`network error fetching ${url}: ${err.message}`);
+    throw new Error(`network error fetching ${url}: ${err.message}`, { cause: err });
   }
   if (!res.ok) {
     throw new Error(`HTTP ${res.status} from ${url}`);
@@ -85,7 +85,7 @@ export async function getLanguageSchema(lang) {
   try {
     schema = await res.json();
   } catch (err) {
-    throw new Error(`invalid JSON at ${url}: ${err.message}`);
+    throw new Error(`invalid JSON at ${url}: ${err.message}`, { cause: err });
   }
   schemaFetchCache.set(lang, { value: schema, expires: Date.now() + SCHEMA_FETCH_TTL_MS });
   return schema;

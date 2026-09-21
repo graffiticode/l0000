@@ -62,14 +62,14 @@ parser → nodePool (AST) → Checker.check → Transformer.transform → Render
 
 A child language's core looks like:
 ```ts
-import { Checker, Transformer, Compiler, lexicon as baseLexicon } from "@graffiticode/l0000";
+import { Checker, Transformer, Compiler, lexicon as baseLexicon, mergeLexicon } from "@graffiticode/l0000";
 class MyChecker extends Checker { HELLO(node, options, resume) { ... } }
 class MyTransformer extends Transformer { HELLO(node, options, resume) { ... } }
-export const lexicon = { ...baseLexicon, hello: { tk: 1, name: "HELLO", ... } };
+export const lexicon = mergeLexicon(baseLexicon, { hello: { tk: 1, name: "HELLO", ... } });
 new Compiler({ langID: "0001", version: "...", Checker: MyChecker, Transformer: MyTransformer });
 ```
 
-The `lexicon` merge is positional — child entries override base entries with the same key. The lexicon is what the parser uses to tokenize source; lexicon entries' `name` field is the AST tag the visitor dispatches on.
+The lexicon is what the parser uses to tokenize source; lexicon entries' `name` field is the AST tag the visitor dispatches on. Merging is child-over-parent, so a child word that reuses a base key silently deletes the base function from that dialect. `mergeLexicon` (`core/src/merge-lexicon.ts`) guards this: an undeclared collision throws at import, and deliberate shadowing must be listed in `{ overrides: [...] }` (a stale override that no longer collides also throws). Prefer renaming over overriding. Some children still hand-roll `{ ...baseLexicon, ... }` until converted.
 
 ## Records, keys, and arithmetic
 
@@ -88,7 +88,7 @@ Arithmetic uses `decimal.js`. The `Decimal` default-export normalization at the 
 `createApp({ authUrl })` in `packages/api/src/app.ts` constructs the Express app. Notable ordering:
 
 1. HTTPS redirect (production, non-localhost).
-2. `express.static(STATIC_DIR, { index: false })` — **before** auth. Public assets (`lexicon.js`, `schema.json`, `spec.html`, `instructions.md`, `language-info.json`, `usage-guide.md`, `scope.json`, `template.gc`, and the hashed `/form` bundle assets) are unauthenticated. `index: false` keeps `GET /` as a health check.
+2. `GET /lexicon.js` back-compat alias (see "Static asset pipeline"), then `express.static(STATIC_DIR, { index: false })` — **before** auth. Public assets (`lexicon.json`, `schema.json`, `spec.html`, `instructions.md`, `language-info.json`, `usage-guide.md`, `scope.json`, `template.gc`, and the hashed `/form` bundle assets) are unauthenticated. `index: false` keeps `GET /` as a health check.
 3. Auth middleware attaches `req.auth` but does **not** reject anonymous requests.
 4. Routes: `/`, `/compile`, `GET /form` (serves `static/index.html` from the assembled view embed).
 

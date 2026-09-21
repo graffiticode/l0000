@@ -322,4 +322,47 @@ describe("View", () => {
     await tick(30);
     expect(lastData.focus).toEqual({ type: "cell", name: "A1" });
   });
+  describe("atomic (non-record) results", () => {
+    // A program can compile to a bare value. Spreading one into the model yielded `{}`, which
+    // the reducer read as "no change" — the model stayed empty and the View rendered nothing.
+    test("a stored scalar renders", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored: { data: 10, errors: [] } });
+      const View = await loadView();
+
+      render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+      await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+      expect(lastData).toBe(10);
+    });
+
+    test("a falsy scalar still renders", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored: { data: 0, errors: [] } });
+      const View = await loadView();
+
+      render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+      await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+      expect(lastData).toBe(0);
+    });
+
+    test("a scalar `data` seed renders", async () => {
+      setSearch(`?data=${encodeURIComponent("10")}`);
+      stubApi({ stored: {} });
+      const View = await loadView();
+
+      render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+      await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+      expect(lastData).toBe(10);
+    });
+
+    test("an array stays an array, not an index-keyed object", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored: { data: [1, 2], errors: [] } });
+      const View = await loadView();
+
+      render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+      await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+      expect(lastData).toEqual([1, 2]);
+    });
+  });
 });

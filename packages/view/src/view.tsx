@@ -129,15 +129,28 @@ function hasRenderable(data: any, errors: CompileError[]): boolean {
   return true;
 }
 
+const isPlainObject = (v: any): boolean =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+// Merge only when both sides are records. A program can compile to an ATOMIC value (`10`, a
+// string, an array); spreading one into an object yields `{}` (or index keys), which the
+// reducer then saw as "no change" — leaving the model empty and the View blank. A scalar or
+// array result REPLACES the model instead. A null result (e.g. a compile that produced only
+// errors) leaves the model alone, as the spread always did.
+const merge = (data: any, args: any): any => {
+  if (args === null || args === undefined) return data;
+  return isPlainObject(data) && isPlainObject(args) ? { ...data, ...args } : args;
+};
+
 function baseReduce(data: any, { type, args }: StateAction): any {
   switch (type) {
     case "init":
-      return { ...args };
+      return isPlainObject(args) ? { ...args } : args;
     case "compiled":
     case "loaded":
     case "update":
     case "response":
-      return { ...data, ...args };
+      return merge(data, args);
     case "focus":
       return { ...data, focus: args };
     default:

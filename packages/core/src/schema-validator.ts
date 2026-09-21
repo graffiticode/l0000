@@ -8,8 +8,15 @@
 // chained upstream value before merging it into the head's result.
 
 import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
 
-const ajv = new (Ajv as any)({ allErrors: true, strict: false });
+// The default ajv class reads draft-07 only; L0175, L0180 and L0182 publish
+// draft 2020-12 schemas, which it refuses outright. Pick by `$schema`.
+const ajv07 = new (Ajv as any)({ allErrors: true, strict: false });
+const ajv2020 = new (Ajv2020 as any)({ allErrors: true, strict: false });
+const DRAFT_2020 = /json-schema\.org\/draft\/2020-12/;
+const ajvFor = (schema) =>
+  DRAFT_2020.test(String(schema?.$schema || "")) ? ajv2020 : ajv07;
 const compiled = new Map();
 
 function fingerprint(schema) {
@@ -27,7 +34,7 @@ export function validateAgainstSchema(value, schema) {
   const key = fingerprint(schema);
   let validate = key && compiled.get(key);
   if (!validate) {
-    validate = ajv.compile(schema);
+    validate = ajvFor(schema).compile(schema);
     if (key) compiled.set(key, validate);
   }
   if (validate(value)) return [];

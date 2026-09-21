@@ -16,7 +16,16 @@ export default defineConfig({
       cssFileName: "style",
     },
     rolldownOptions: {
-      external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime"],
+      // `swr` is a declared dependency, so it is external too. Bundled, its CommonJS
+      // `use-sync-external-store/shim` became rolldown's `require("react")` shim, which throws
+      // in the browser ("Calling `require` for \"react\"...") and blanks every consuming view.
+      external: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        /^swr(\/|$)/,
+      ],
     },
     sourcemap: true,
     emptyOutDir: true,

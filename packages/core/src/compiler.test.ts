@@ -481,3 +481,25 @@ describe("Higher-order built-ins take functions (examples.md 80-84)", () => {
     expect(await compile(src)).toBe(expected);
   });
 });
+
+describe("Parens only group", () => {
+  // `(1 2)` means `1 2`: two expressions, whose value is the LAST in source order. The value
+  // used to be whichever finished last, and a PAREN takes an extra async hop, so `(1) 2..`
+  // returned 1.
+  test.each([
+    ["1 2..", 2],
+    ["(1 2)..", 2],
+    ["(1) 2..", 2],
+    ["1 (2)..", 2],
+    ["(1) (2)..", 2],
+    ["((1 2) 3)..", 3],
+    ["(1 (2 3))..", 3],
+    ["(add 1 2)..", 3],
+    ["(add 1 2) 3..", 3],
+    ["let a = (1 2).. a..", 2],
+    ["(<x y: add x y>) 10 20..", 30],
+    ["((add) 1 2)..", 3],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toBe(expected);
+  });
+});

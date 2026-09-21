@@ -67,7 +67,7 @@ case age of
 end..
 ```
 
-Patterns can be literals, tags, variable bindings, tuples `(x, y)`, records `{name, age}`, or the wildcard `_`. Use `case` instead of nested `if` for any non-trivial branching.
+Patterns can be literals, tags, variable bindings, lists `[x y]`, records `{name, age}`, or the wildcard `_`. Use `case` instead of nested `if` for any non-trivial branching.
 
 ## Base library — built-in functions
 

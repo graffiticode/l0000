@@ -61,6 +61,7 @@ consecutive expressions in one block and terminate only at the end.
 - **Prefix notation**: Functions are applied by writing the function name followed by its arguments: `add 1 2`
 - **Fixed arity**: Every function has a known number of parameters, so applications parse unambiguously without grouping: `add 1 mul 2 3` parses as `add(1, mul(2, 3))`
 - **Parentheses defer application**: `map (double) [1 2 3]` passes `double` as a value rather than applying it
+- **Parentheses only group**: `(1 2)` means `1 2`. There are no tuples and no commas inside parentheses; use a list (`[1 "a"]`) instead
 - **Built-ins as values**: Parenthesize a built-in to pass it as a function: `apply (add) [1 2]`, `reduce (max) 0 xs`, `map (not) xs`. Without parentheses it is applied, so `apply add [1 2]` is a parse error ("Too few arguments for ADD")
 - **Program terminator**: A program ends with `..`, and `..` appears nowhere else except after `let` bindings. It terminates the whole program, not an expression — text following it is dropped without an error.
 - **Let terminator**: Every `let` binding ends with `..`
@@ -110,7 +111,7 @@ end
 Supports:
 - Literal values
 - Tag values (matched by identity)
-- Tuple destructuring: `(a, b)`
+- List destructuring: `[a b]`
 - Record destructuring: `{ name, age }`
 - Wildcard `_`
 

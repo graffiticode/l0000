@@ -74,6 +74,8 @@ Parentheses are used to defer application:
 map (double) [1 2 3]
 ```
 
+Parentheses only group; they build no value of their own. `(1 2)` means the same as `1 2`: two expressions, whose value is the last. Commas are not allowed inside parentheses.
+
 ### Lists
 ```
 [1 2 3]
@@ -157,7 +159,7 @@ end
 Supports:
 - Literal values
 - Tag values (matched by identity)
-- Tuple destructuring: `(a, b)`
+- List destructuring: `[a b]`
 - Record destructuring: `{ name, age }`
 - Wildcard `_`
 
@@ -190,11 +192,8 @@ Explicit type annotations are not included in the grammar.
   ```
   { name: string, age: number }
   ```
-  
-- **Tuples** – Ordered, fixed-length collections with heterogeneous types.
-  ```
-  (number, string, bool)
-  ```
+
+There is no separate tuple type. Values are immutable and a list may hold elements of different types, so a fixed-length list such as `[1 "a" true]` serves as a tuple.
 
 ## Function Types
 
@@ -273,7 +272,6 @@ This approach draws inspiration from **Model-View-Update** (MVU) architectures, 
 - `bool`
 - `list`
 - `record`
-- `tuple`
 - `json`
 
 ## Built-in Functions

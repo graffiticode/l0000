@@ -119,8 +119,8 @@ Natural-language prompts for training a RAG model on the L0000 root Graffiticode
 85. Matches the number 1 and returns `"one"`, otherwise returns `"other"`.
 86. Matches a number against 0, 1, and a wildcard returning `"many"`.
 87. Matches a number and returns `"positive"`, `"negative"`, or `"zero"`.
-88. Matches the tuple `(x, y)` and returns their sum.
-89. Matches the tuple `(x, y)` and returns the larger value.
+88. Matches the list `[x y]` and returns their sum.
+89. Matches the list `[x y]` and returns the larger value.
 90. Matches the record `{name, age}` and formats `"<name> is <age>"`.
 91. Matches the record `{width, height}` and returns the area.
 92. Matches the record `{first, last}` and returns `"<first> <last>"`.

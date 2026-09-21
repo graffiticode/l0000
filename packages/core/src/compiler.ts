@@ -978,17 +978,21 @@ export class Transformer extends Visitor {
       });
       return;
     }
+    // Store each value at its SOURCE index. Values arrive in completion order, and a PAREN
+    // takes an extra async hop, so pushing them made `(1) 2..` return 1 — PROG takes the last
+    // element as the program's value.
     let err = [];
-    let val = [];
-    for (let elt of node.elts) {
+    const val = [];
+    let done = 0;
+    node.elts.forEach((elt, i) => {
       this.visit(elt, options, (e0, v0) => {
         err = err.concat(e0);
-        val.push(v0);
-        if (val.length === node.elts.length) {
+        val[i] = v0;
+        if (++done === node.elts.length) {
           resume(err, val);
         }
       });
-    }
+    });
     if (node.elts.length === 0) {
       val.push("");
       resume(err, val);
@@ -1380,9 +1384,12 @@ export class Transformer extends Visitor {
     });
   }
   PAREN(node, options, resume) {
+    // Parens only group. A grouped sequence `(1 2)` (PAREN(EXPRS), @graffiticode/parser
+    // >= 1.7.2) has the value of its last expression, exactly like `1 2`.
+    const isSequence = this.nodePool[node.elts[0]]?.tag === "EXPRS";
     this.visit(node.elts[0], options, (e0, v0) => {
       const err = [].concat(e0);
-      const val = v0;
+      const val = isSequence ? v0[v0.length - 1] : v0;
       resume(err, val);
     });
   }

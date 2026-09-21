@@ -181,6 +181,52 @@ function deepConvertRecords(val) {
   return val;
 }
 
+const IDENTIFIER_SHAPED = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/**
+ * The display text of a value (`str`). At the top level a string is itself and a tag is its
+ * name, so text reads naturally in templates. Inside a list or record every value renders as
+ * Graffiticode source -- strings quoted, tags as `tag red` -- so the aggregate reads as code.
+ * Never throws.
+ */
+function displayString(val, nested = false) {
+  if (typeof val === "string") {
+    return nested ? JSON.stringify(val) : val;
+  }
+  if (val === null || val === undefined) {
+    return "null";
+  }
+  if (typeof val !== "object") {
+    return String(val);  // number, boolean
+  }
+  if (Array.isArray(val)) {
+    return `[${val.map(elt => displayString(elt, true)).join(" ")}]`;
+  }
+  if (val.tag !== undefined && !val.elts) {
+    return nested ? `tag ${val.tag}` : String(val.tag);
+  }
+  if (Array.isArray(val.lambda?.params)) {
+    return `<${val.lambda.params.join(" ")}>`;
+  }
+  const fields = [];
+  if (isRecord(val)) {
+    for (const [encodedKey, value] of val._entries) {
+      const colonIdx = encodedKey.indexOf(":");
+      const kind = encodedKey.substring(0, colonIdx);
+      const name = encodedKey.substring(colonIdx + 1);
+      const key = kind === "num" || (kind === "tag" && IDENTIFIER_SHAPED.test(name))
+        ? name : JSON.stringify(name);
+      fields.push(`${key}: ${displayString(value, true)}`);
+    }
+  } else {
+    for (const [name, value] of Object.entries(val)) {
+      const key = IDENTIFIER_SHAPED.test(name) ? name : JSON.stringify(name);
+      fields.push(`${key}: ${displayString(value, true)}`);
+    }
+  }
+  return `{${fields.join(" ")}}`;
+}
+
 function recordToPlainObject(rec) {
   return deepConvertRecords(rec);
 }
@@ -393,6 +439,11 @@ export class Checker extends Visitor {
     const err = [];
     const val = node;
     resume(err, val);
+  }
+  STR_OF(node, options, resume) {
+    this.visit(node.elts[0], options, (e0, v0) => {
+      resume([].concat(e0), node);
+    });
   }
   JSON(node, options, resume) {
     this.visit(node.elts[0], options, (e0, v0) => {
@@ -1089,6 +1140,12 @@ export class Transformer extends Visitor {
     const err = [];
     const val = node.elts[0];
     resume(err, val);
+  }
+  STR_OF(node, options, resume) {
+    // `str`: display text of any value. See displayString.
+    this.visit(node.elts[0], options, (e0, v0) => {
+      resume([].concat(e0), displayString(v0));
+    });
   }
   JSON(node, options, resume) {
     this.visit(node.elts[0], options, (e0, v0) => {

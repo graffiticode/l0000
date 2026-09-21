@@ -130,6 +130,15 @@ case color of
 end..
 ```
 
+### Strings and templates
+
+A string is written in double or single quotes. A template, written in backticks, interpolates
+expressions: `` `${name} is ${age}` ``. Each `${…}` is converted to text with `str`, so any value
+can be interpolated; a function application inside `${…}` works as anywhere else.
+
+`concat` stays strict: `concat "age: " 30` is an error. Write `concat "age: " (str 30)` or use a
+template.
+
 ### Lambdas
 ```
 <x: add x 1>
@@ -326,6 +335,7 @@ This approach draws inspiration from **Model-View-Update** (MVU) architectures, 
 | `hd` | `<list: any>` | First item of list |
 | `isempty` | `<list: bool>` | Returns true if the list is empty |
 | `json` | `<string: any>` | Parses a string as JSON |
+| `str` | `<any: string>` | Converts any value to display text |
 | `last` | `<list: any>` | Returns the last element of a list |
 | `le` | `<number number: bool>` | Returns true if first value is less than or equal to second |
 | `length` | `<list|string: integer>` | Returns the length of a list or string |
@@ -718,6 +728,20 @@ Return a new record with an updated field
 
 ```
 set "a" 2 {a: 1}  | returns {a: 2}
+```
+
+### str
+
+Converts any value to display text. A string is itself; a number, boolean, null or tag is written
+as is (`red` for a tag); a list or record is written in Graffiticode syntax, with strings inside it
+quoted and tags written `tag red`. Never fails. Number formatting (fixed decimals) is not
+provided by `str`.
+
+```
+str 30                     | returns "30"
+str tag red                | returns "red"
+str [1 "a" tag red]        | returns "[1 \"a\" tag red]"
+str {name: "Ann" age: 30}  | returns "{name: \"Ann\" age: 30}"
 ```
 
 ### sub

@@ -67,6 +67,7 @@ consecutive expressions in one block and terminate only at the end.
 - **Let terminator**: Every `let` binding ends with `..`
 - **No expression separator**: Consecutive expressions in a block are juxtaposed. Argument boundaries come from arity alone, so `add 1 2 add 3 4` is two complete expressions, not one
 - **Comments**: Block comments are enclosed in `/* ... */`
+- **Templates**: Backtick strings interpolate, converting each `${…}` with `str`: `` `${name} is ${age}` ``. `concat` only accepts two strings or two lists, so `concat "age: " 30` is an error; use a template or `str`
 
 ## Data Types
 
@@ -181,6 +182,7 @@ This is equivalent to `{x: 1, y: 2, z: 3}`.
 | `hd` | `<list: any>` | First item of list |
 | `isempty` | `<list: bool>` | Returns true if the list is empty |
 | `json` | `<string: any>` | Parses a string as JSON |
+| `str` | `<any: string>` | Converts any value to display text; lists and records in Graffiticode syntax |
 | `last` | `<list: any>` | Returns the last element of a list |
 | `le` | `<number number: bool>` | Less than or equal |
 | `length` | `<list\|string: integer>` | Returns the length of a list or string |

@@ -30,7 +30,7 @@
     "decimal.js": "^10.5.0"
   },
   "devDependencies": {
-    "@graffiticode/parser": "^1.8.0",
+    "@graffiticode/parser": "^1.9.0",
     "spec-md": "^3.1.0"
   }
 }

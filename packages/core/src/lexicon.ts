@@ -183,6 +183,14 @@ export const lexicon = {
     "type": "<string: any>",
     "description": "Parses a string as JSON."
   },
+  "str": {
+    "tk": 1,
+    "name": "STR_OF",
+    "cls": "function",
+    "arity": 1,
+    "type": "<any: string>",
+    "description": "Converts any value to display text: a string as itself, a number, boolean, null or tag as written (`red`), and a list or record in Graffiticode syntax (`[1 \"a\"]`, `{a: 1}`). Template literals apply it to each `${…}`."
+  },
   "eq": {
     "tk": 1,
     "name": "EQ",

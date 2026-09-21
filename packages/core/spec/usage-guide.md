@@ -51,6 +51,7 @@ each `let`) — text after it is discarded silently rather than flagged.
 | Lambdas | angle-bracket notation | `<x: add x 1>`, `<x y: add x y>` |
 | Let bindings | `let name = value..` | `let double = <x: mul 2 x>..` |
 | Function application | prefix, space-separated | `add 1 2`, `map (double) [1 2 3]` |
+| Templates | backticks, `${…}` converted with `str` | `` `${name} is ${age}` `` |
 
 Function application is **prefix** (function before arguments) and **fixed-arity** — every built-in declares how many arguments it takes, so `add 1 mul 2 3` parses unambiguously as `add(1, mul(2, 3))`. Parentheses defer application: `map (double) [1 2 3]` passes `double` as a value rather than applying it. Built-ins work the same way — `apply (add) [1 2]`, `reduce (max) 0 xs` — while an unparenthesized `apply add [1 2]` fails with "Too few arguments for ADD".
 
@@ -89,6 +90,7 @@ The base library is universal across dialects. Every dialect adds its own vocabu
 | `get-var`, `set-var` | `<string …: any>` | Read or write a named binding visible through the rest of the program. |
 | `get-val-public`, `get-val-private` | `<string: string>` | Read system-supplied values (e.g. `itemId`); the private variant is decrypted at compile time. |
 | `json` | `<string: any>` | Parse a string as JSON. |
+| `str` | `<any: string>` | Display text of any value; lists and records in Graffiticode syntax. |
 | `log` | `<any: any>` | Print a value and return it (identity-with-side-effect). |
 | `apply` | `<function list: any>` | Apply a function to a list of arguments. |
 | `data` | `<record: record>` | Returns the upstream task's compiled output if a chained upstream is wired, or the argument otherwise. See "Composition" below. |

@@ -574,3 +574,37 @@ describe("map, filter and reduce pass each element as ONE argument", () => {
     expect(await compile(src)).toEqual(expected);
   });
 });
+
+describe("str and template interpolation", () => {
+  // `str` is display text: a string as itself, a tag as its name; inside a list or record,
+  // values render as Graffiticode source.
+  test.each([
+    ['str "Ann"..', "Ann"],
+    ["str 30..", "30"],
+    ["str 0.3..", "0.3"],
+    ["str true..", "true"],
+    ["str null..", "null"],
+    ["str tag red..", "red"],
+    ['str [1 "a" [2] tag red null true]..', '[1 "a" [2] tag red null true]'],
+    ['str {a: 1 "b c": "x" n: {m: [1]}}..', '{a: 1 "b c": "x" n: {m: [1]}}'],
+    ["str []..", "[]"],
+    ["str {}..", "{}"],
+    ["str (<x y: add x y>)..", "<x y>"],
+    ['concat "a" (str 1)..', "a1"],
+    // Templates apply `str` to each interpolation, and group it so applications fold.
+    ["let a = 30.. `age ${a}`..", "age 30"],
+    ['let n = "Ann".. let a = 30.. `${n} is ${a}`..', "Ann is 30"],
+    ["`a${add 1 2}b`..", "a3b"],
+    ["`t ${tag red} ${true}`..", "t red true"],
+    ["let l = [1 2].. `l ${l}`..", "l [1 2]"],
+    ["`${map (<x: mul 2 x>) [1 2]}`..", "[2 4]"],
+    // examples.md 90
+    ['let r = {name: "Ann" age: 30}.. case r of {name age}: `${name} is ${age}` end..', "Ann is 30"],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toEqual(expected);
+  });
+
+  test("concat stays strict", async () => {
+    await expect(compile('concat "a" 1..')).rejects.toBeDefined();
+  });
+});

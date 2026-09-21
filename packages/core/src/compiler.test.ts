@@ -427,3 +427,18 @@ describe("Boolean logic (examples.md 22-26)", () => {
     expect(await compile(src)).toBe(expected);
   });
 });
+
+describe("Higher-order built-ins take functions (examples.md 80-84)", () => {
+  test.each([
+    ["apply (<a b: add a b>) [1 2]..", 3],
+    ["apply (<a b: mul a b>) [3 4]..", 12],
+    ["reduce (<a b: max a b>) 0 [3 9 2 7]..", 9],
+    // A parenthesized built-in is a function value (@graffiticode/parser >= 1.7.1).
+    ["apply (add) [1 2]..", 3],
+    ["apply (mul) [3 4]..", 12],
+    ["reduce (max) 0 [3 9 2 7]..", 9],
+    ["reduce (min) 100 [3 9 2 7]..", 2],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toBe(expected);
+  });
+});

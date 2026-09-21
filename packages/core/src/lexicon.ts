@@ -156,7 +156,7 @@ export const lexicon = {
     "name": "APPLY",
     "cls": "function",
     "arity": 2,
-    "type": "<number number: number>",
+    "type": "<function list: any>",
     "description": "Applies a function to a list of arguments."
   },
   "data": {

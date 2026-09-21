@@ -356,10 +356,10 @@ and true true    | returns true
 
 ### apply
 
-Apply a function to an argument list
+Apply a function to an argument list. Parenthesize a built-in to pass it as a value: `(add)`, not `add`.
 
 ```
-apply add [1 2]  | returns 3
+apply (add) [1 2]  | returns 3
 ```
 
 ### concat

@@ -52,7 +52,7 @@ each `let`) — text after it is discarded silently rather than flagged.
 | Let bindings | `let name = value..` | `let double = <x: mul 2 x>..` |
 | Function application | prefix, space-separated | `add 1 2`, `map (double) [1 2 3]` |
 
-Function application is **prefix** (function before arguments) and **fixed-arity** — every built-in declares how many arguments it takes, so `add 1 mul 2 3` parses unambiguously as `add(1, mul(2, 3))`. Parentheses defer application: `map (double) [1 2 3]` passes `double` as a value rather than applying it.
+Function application is **prefix** (function before arguments) and **fixed-arity** — every built-in declares how many arguments it takes, so `add 1 mul 2 3` parses unambiguously as `add(1, mul(2, 3))`. Parentheses defer application: `map (double) [1 2 3]` passes `double` as a value rather than applying it. Built-ins work the same way — `apply (add) [1 2]`, `reduce (max) 0 xs` — while an unparenthesized `apply add [1 2]` fails with "Too few arguments for ADD".
 
 Records support shorthand syntax for fields whose value comes from a variable of the same name. `let x = 1.. let y = 2.. {x y z: 3}..` is equivalent to `{x: 1, y: 2, z: 3}`.
 

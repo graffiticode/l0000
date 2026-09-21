@@ -415,3 +415,15 @@ describe("Existing functionality", () => {
     });
   });
 });
+
+describe("Boolean logic (examples.md 22-26)", () => {
+  test.each([
+    ["and true false..", false],
+    ["or true false..", true],
+    ["not true..", false],
+    ["and gt 5 3 lt 2 10..", true],
+    ["or eq 1 2 lt 1 2..", true],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toBe(expected);
+  });
+});

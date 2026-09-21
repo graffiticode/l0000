@@ -690,10 +690,9 @@ export class Checker extends Visitor {
   }
   NOT(node, options, resume) {
     this.visit(node.elts[0], options, (err1, val1) => {
-      let err = [].concat(err1);
-      if (typeof val1 !== "boolean" && val1 !== null && val1 !== undefined && val1 !== 0 && val1 !== "" && val1 !== false) {
-        err.push(`NOT operation requires a boolean argument, got ${typeof val1}`);
-      }
+      // Checker values are AST nodes, not runtime values, so a typeof test on val1
+      // would reject every argument. NOT's truthiness is resolved in the Transformer.
+      const err = [].concat(err1);
       const val = node;
       resume(err, val);
     });
@@ -710,13 +709,8 @@ export class Checker extends Visitor {
   OR(node, options, resume) {
     this.visit(node.elts[0], options, (err1, val1) => {
       this.visit(node.elts[1], options, (err2, val2) => {
-        let err = [].concat(err1).concat(err2);
-        if (typeof val1 !== "boolean" && val1 !== null && val1 !== undefined && val1 !== 0 && val1 !== "" && val1 !== false) {
-          err.push(`OR operation requires boolean arguments, got ${typeof val1} for first argument`);
-        }
-        if (typeof val2 !== "boolean" && val2 !== null && val2 !== undefined && val2 !== 0 && val2 !== "" && val2 !== false) {
-          err.push(`OR operation requires boolean arguments, got ${typeof val2} for second argument`);
-        }
+        // See NOT: Checker values are AST nodes, so no runtime type test here.
+        const err = [].concat(err1).concat(err2);
         const val = node;
         resume(err, val);
       });
@@ -725,13 +719,8 @@ export class Checker extends Visitor {
   AND(node, options, resume) {
     this.visit(node.elts[0], options, (err1, val1) => {
       this.visit(node.elts[1], options, (err2, val2) => {
-        let err = [].concat(err1).concat(err2);
-        if (typeof val1 !== "boolean" && val1 !== null && val1 !== undefined && val1 !== 0 && val1 !== "" && val1 !== false) {
-          err.push(`AND operation requires boolean arguments, got ${typeof val1} for first argument`);
-        }
-        if (typeof val2 !== "boolean" && val2 !== null && val2 !== undefined && val2 !== 0 && val2 !== "" && val2 !== false) {
-          err.push(`AND operation requires boolean arguments, got ${typeof val2} for second argument`);
-        }
+        // See NOT: Checker values are AST nodes, so no runtime type test here.
+        const err = [].concat(err1).concat(err2);
         const val = node;
         resume(err, val);
       });

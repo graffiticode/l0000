@@ -600,6 +600,13 @@ describe("str and template interpolation", () => {
     ["`${map (<x: mul 2 x>) [1 2]}`..", "[2 4]"],
     // examples.md 90
     ['let r = {name: "Ann" age: 30}.. case r of {name age}: `${name} is ${age}` end..', "Ann is 30"],
+    // String and record literals inside an interpolation (parser >= 1.9.1).
+    ['`x${"s"}y`..', "xsy"],
+    ['`x${[1 "a"]}y`..', 'x[1 "a"]y'],
+    ["`x${{a: 1}}y`..", "x{a: 1}y"],
+    ['`x${get "a" {a: 1}}y`..', "x1y"],
+    ['`a${`b${"c"}d`}e`..', "abcde"],
+    ['`${case 1 of 1: "one" _: "x" end}`..', "one"],
   ])("%s", async (src, expected) => {
     expect(await compile(src)).toEqual(expected);
   });

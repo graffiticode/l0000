@@ -1404,24 +1404,25 @@ export class Transformer extends Visitor {
       });
     });
   }
+  // MAP, FILTER and REDUCE apply the function node by re-visiting it with `args` set (see
+  // LAMBDA). Each call gets a SHALLOW copy of `options` carrying its own args. They used to
+  // deep-copy through JSON, which erased every record argument (a record's entries are a Map)
+  // and any other non-JSON value. An empty list resolves at once; it used to never resume.
   MAP(node, options, resume) {
     // FIXME make async
     options.SYNC = true;
     this.visit(node.elts[1], options, (e1, v1) => {
-      let err = [];
-      let val = [];
-      v1.forEach(args => {
-        options.SYNC = true;
-        options.args = args;
-        options = JSON.parse(JSON.stringify(options));  // Copy option arg support async.
-        this.visit(node.elts[0], options, (e0, v0) => {
-          val.push(v0);
+      let err = [].concat(e1);
+      const val = [];
+      // Each element is ONE argument. Passing it bare let LAMBDA spread a list element
+      // across the parameters, so `map (<x: length x>) [[1 2]]` bound x to 1.
+      v1.forEach((elt, i) => {
+        this.visit(node.elts[0], { ...options, SYNC: true, args: [elt] }, (e0, v0) => {
           err = err.concat(e0);
-          if (val.length === v1.length) {
-            resume(err, val);
-          }
+          val[i] = v0;
         });
       });
+      resume(err, val);
     });
     options.SYNC = false;
   }
@@ -1429,24 +1430,17 @@ export class Transformer extends Visitor {
     // FIXME make async
     options.SYNC = true;
     this.visit(node.elts[1], options, (e1, v1) => {
-      let err = [];
-      let val = [];
-      v1.forEach(args => {
-        options.args = args;
-        options = JSON.parse(JSON.stringify(options));  // Copy option arg support async.
-        this.visit(node.elts[0], options, (e0, v0) => {
-          if (!!v0) {
-            val.push(args);
-          } else {
-            val.push(null);
-          }
+      let err = [].concat(e1);
+      const val = [];
+      v1.forEach((elt) => {
+        this.visit(node.elts[0], { ...options, SYNC: true, args: [elt] }, (e0, v0) => {
           err = err.concat(e0);
-          if (val.length === v1.length) {
-            val = val.filter(v => v !== null);
-            resume(err, val);
+          if (v0) {
+            val.push(elt);
           }
         });
       });
+      resume(err, val);
     });
     options.SYNC = false;
   }
@@ -1456,20 +1450,15 @@ export class Transformer extends Visitor {
     options.SYNC = true;
     this.visit(node.elts[1], options, (e1, v1) => {
       this.visit(node.elts[2], options, (e2, v2) => {
-        let err = [];
+        let err = [].concat(e1).concat(e2);
         let val = v1;
-        v2.forEach((args, index) => {
-          options.SYNC = true;
-          options.args = [val, args];
-          options = JSON.parse(JSON.stringify(options));  // Copy option arg support async.
-          this.visit(node.elts[0], options, (e0, v0) => {
-            val = v0;
+        v2.forEach((elt) => {
+          this.visit(node.elts[0], { ...options, SYNC: true, args: [val, elt] }, (e0, v0) => {
             err = err.concat(e0);
-            if (index === v2.length - 1) {
-              resume(err, val);
-            }
+            val = v0;
           });
         });
+        resume(err, val);
       });
     });
     options.SYNC = false;
@@ -1479,36 +1468,79 @@ export class Transformer extends Visitor {
     const val = node;
     resume(err, val);
   }
+  /**
+   * Match `value` against the case pattern at `nid`. Returns the variables the pattern binds
+   * (`{ name: value }`), or null if it does not match. Lists match EXACTLY their length;
+   * records are OPEN (a record pattern names the keys it needs, extra keys are ignored).
+   *
+   * This is what CASE uses. `match()` above, a structural comparison of AST nodes that has no
+   * notion of binding, is kept only for dialects that call it directly.
+   */
+  bindPattern(nid, value, bindings = {}) {
+    const pattern = this.nodePool[nid];
+    const [head] = pattern?.elts ?? [];
+    switch (pattern?.tag) {
+    case "IDENT":
+      bindings[head] = value;
+      return bindings;
+    case "TAG":
+      if (head === "_") {
+        return bindings;
+      }
+      return value !== null && typeof value === "object" && !value.elts && value.tag === head
+        ? bindings : null;
+    case "NUM":
+      return typeof value === "number" && Number(head) === value ? bindings : null;
+    case "STR":
+      return value === head ? bindings : null;
+    case "BOOL":
+      return typeof value === "boolean" && String(head) === String(value) ? bindings : null;
+    case "NULL":
+      return value === null ? bindings : null;
+    case "LIST":
+      if (!Array.isArray(value) || value.length !== pattern.elts.length) {
+        return null;
+      }
+      return pattern.elts.every((elt, i) => this.bindPattern(elt, value[i], bindings) !== null)
+        ? bindings : null;
+    case "RECORD": {
+      const isPlainObject = value !== null && typeof value === "object" && !Array.isArray(value);
+      if (!isRecord(value) && !isPlainObject) {
+        return null;
+      }
+      return pattern.elts.every((elt) => {
+        const [keyNid, fieldNid] = this.nodePool[elt].elts;
+        const key = this.nodePool[keyNid].elts[0];
+        const field = isRecord(value)
+          ? recordGet(value, classifyRuntimeKey(this.nodePool[keyNid].tag === "TAG" ? { tag: key } : key))
+          : value[key];
+        return field !== undefined && this.bindPattern(fieldNid, field, bindings) !== null;
+      }) ? bindings : null;
+    }
+    default:
+      return null;
+    }
+  }
   CASE(node, options, resume) {
     // FIXME this isn't ASYNC compatible
     options.SYNC = true;
     this.visit(node.elts[0], options, (e0, v0) => {
-      const type = typeof v0;
-      const val = `${v0}`;
-      const expr = (
-        v0 === null && {tag: "NUL", elts: []} ||
-        v0?.tag !== undefined && !v0.elts && {tag: "TAG", elts: [v0.tag]} ||
-        v0?.tag !== undefined && v0 ||   // Already an AST node.
-        type === "boolean" && {tag: "BOOL", elts: [val]} ||
-        type === "number" && {tag: "NUM", elts: [val]} ||
-        {tag: "STR", elts: [val]}
-      );
-      let foundMatch = false;
-      const patterns = [];
-      for (var i = 1; i < node.elts.length; i++) {
-        this.visit(node.elts[i], options, (err, val) => {
-          if (this.match(options, [this.node(node.elts[i]).elts[0]], expr).length) {
-            this.visit(val.exprElt, options, resume);
-            foundMatch = true;
-          }
-        });
-        if (foundMatch) {
+      // First matching clause wins. Its pattern's variables are bound for its value only.
+      for (let i = 1; i < node.elts.length; i++) {
+        const [patternNid, valueNid] = this.nodePool[node.elts[i]].elts;
+        const bindings = this.bindPattern(patternNid, v0);
+        if (bindings) {
+          const names = Object.keys(bindings);
+          enterEnv(options, "case", names.length);
+          names.forEach((name) => addWord(options, name, { name, val: bindings[name] }));
+          this.visit(valueNid, options, (e1, v1) => {
+            exitEnv(options);
+            resume([].concat(e0).concat(e1), v1);
+          });
           return;
         }
       }
-      if (!foundMatch) {
-        resume([], {})
-      }
+      resume([].concat(e0), {});
     });
     options.SYNC = false;
   }

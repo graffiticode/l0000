@@ -156,14 +156,41 @@ case x of
 end
 ```
 
-Supports:
-- Literal values
-- Tag values (matched by identity)
-- List destructuring: `[a b]`
-- Record destructuring: `{ name, age }`
-- Wildcard `_`
+| Pattern | Matches | Binds |
+| :------ | :------ | :---- |
+| `_` | anything | nothing |
+| `x` | anything | `x` |
+| `1`, `"s"`, `true`, `null` | an equal value | nothing |
+| `tag red` | the tag `red` | nothing |
+| `[p1 p2]` | a list of exactly that many elements, each matching | what each `p` binds |
+| `{k}` | a record with field `k` | `k` |
+| `{k: p}` | a record whose field `k` matches `p` | what `p` binds |
 
-Pattern matching on function arguments is disallowed.
+Lists match exactly their length: `[x y]` does not match `[1 2 3]`. Records are open: `{name}`
+matches any record with a `name` field, whatever else it holds. Patterns nest, and literals,
+tags and `_` work at any depth. A pattern's variables are bound in its clause only, and a
+variable may appear once per pattern. The first matching clause wins; if none matches, the
+result is `{}`.
+
+```
+case shape of
+  {kind: tag circle r}: mul 3 mul r r
+  {kind: tag rect w h}: mul w h
+  [x y]: add x y
+  _: 0
+end
+```
+
+`let` destructures with the same list and record patterns, binding every variable for the
+rest of the program:
+
+```
+let [a b] = [1 2]..
+let {name age: years} = person..
+```
+
+A `let` pattern may only bind variables (and use `_`). Function parameters cannot be patterns:
+`<[a b]: ...>` is an error. Destructure in the body instead: `<p: case p of [a b]: ... end>`.
 
 # Type System
 

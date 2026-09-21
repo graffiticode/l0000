@@ -67,7 +67,9 @@ case age of
 end..
 ```
 
-Patterns can be literals, tags, variable bindings, lists `[x y]`, records `{name, age}`, or the wildcard `_`. Use `case` instead of nested `if` for any non-trivial branching.
+Patterns can be literals, tags, variables, lists `[x y]`, records `{name age}` / `{age: years}`, or the wildcard `_`, nested to any depth. A list pattern matches only a list of exactly that length; a record pattern matches any record with the named fields. A pattern's variables are bound in its clause only. Use `case` instead of nested `if` for any non-trivial branching.
+
+`let` destructures with the same list and record patterns: `let [a b] = pair..`, `let {name} = person..`. Function parameters cannot be patterns — write `<p: case p of [a b]: … end>`.
 
 ## Base library — built-in functions
 

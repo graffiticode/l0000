@@ -503,3 +503,74 @@ describe("Parens only group", () => {
     expect(await compile(src)).toBe(expected);
   });
 });
+
+describe("Pattern matching", () => {
+  // examples.md 85-93 and the aggregate rules: lists match EXACTLY their length, records are
+  // OPEN, patterns nest, and a pattern's variables are bound for its clause value only.
+  test.each([
+    ['case 1 of 1: "one" _: "other" end..', "one"],
+    ['case 5 of 0: "zero" 1: "one" _: "many" end..', "many"],
+    ["case 5 of x: add x 1 end..", 6],
+    ["case [3 4] of [x y]: add x y end..", 7],
+    ["case [3 4] of [x y]: max x y end..", 4],
+    ['case {name: "Ann" age: "30"} of {name age}: concat name concat " is " age end..', "Ann is 30"],
+    ["case {width: 2 height: 3} of {width height}: mul width height end..", 6],
+    ['case {first: "Ada" last: "L"} of {first last}: concat first concat " " last end..', "Ada L"],
+    ["case [7 8] of []: 0 _: hd [7 8] end..", 7],
+    ["case [] of []: 0 _: 1 end..", 0],
+    // Exact-length lists: a longer list falls through.
+    ["case [3 4 5] of [x y]: add x y _: 0 end..", 0],
+    // Open records, nesting, and literals inside aggregates.
+    ["case {kind: tag circle r: 2 id: 9} of {kind: tag circle r}: mul r r _: 0 end..", 4],
+    ["case {kind: tag square r: 2} of {kind: tag circle r}: mul r r _: 0 end..", 0],
+    ["case {p: [1 2]} of {p: [x y]}: add x y end..", 3],
+    ["case [0 4] of [0 y]: y _: 0 end..", 4],
+    ["case [1 4] of [0 y]: y _: 0 end..", 0],
+    ["case {name: 1} of {name age}: 1 _: 0 end..", 0],
+    ["case {age: 3} of {age: years}: years end..", 3],
+    // A pattern variable shadows an outer binding.
+    ["let x = 100.. case 5 of x: x end..", 5],
+    ['case true of false: "f" true: "t" end..', "t"],
+    ["case tag red of tag blue: 1 tag red: 2 end..", 2],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toEqual(expected);
+  });
+
+  test("no matching clause yields {}", async () => {
+    expect(await compile("case 9 of 1: 1 end..")).toEqual({});
+  });
+});
+
+describe("let destructuring", () => {
+  test.each([
+    ["let [a b] = [1 2].. add a b..", 3],
+    ['let {name} = {name: "A"}.. name..', "A"],
+    ['let {name age: years} = {name: "A" age: 3}.. years..', 3],
+    ["let [a [b c]] = [1 [2 3]].. add a add b c..", 6],
+    ["let {p: [x y]} = {p: [4 5]}.. mul x y..", 20],
+    ["let [a _] = [1 2].. a..", 1],
+    ["let a = 1.. let [a b] = [5 6].. a..", 5],
+    ["let p = [7 8].. let [x y] = p.. y..", 8],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toEqual(expected);
+  });
+});
+
+describe("map, filter and reduce pass each element as ONE argument", () => {
+  // Elements used to be spread across the lambda's parameters (a list element bound its
+  // first item), deep-copied through JSON (erasing records), and an empty list never resumed.
+  test.each([
+    ["map (<x: length x>) [[1 2] [3 4 5]]..", [2, 3]],
+    ["map (<p: case p of [a b]: add a b end>) [[1 2] [3 4]]..", [3, 7]],
+    ['map (<r: get "a" r>) [{a: 1} {a: 2}]..', [1, 2]],
+    ["map (<x: x>) []..", []],
+    ["map (<x: map (<y: add x y>) [10 20]>) [1 2]..", [[11, 21], [12, 22]]],
+    ["filter (<x: eq (length x) 2>) [[1 2] [3] [4 5]]..", [[1, 2], [4, 5]]],
+    ['filter (<r: gt (get "a" r) 1>) [{a: 1} {a: 2}]..', [{ a: 2 }]],
+    ["filter (<x: x>) []..", []],
+    ['reduce (<acc r: add acc get "a" r>) 0 [{a: 1} {a: 2}]..', 3],
+    ["reduce (<a b: add a b>) 5 []..", 5],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toEqual(expected);
+  });
+});

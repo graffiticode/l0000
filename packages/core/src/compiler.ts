@@ -960,7 +960,24 @@ export class Transformer extends Visitor {
       resume(err, val);
     });
   }
+  isFunctionNode(nid) {
+    const n = this.nodePool[nid];
+    return n?.tag === "LAMBDA" || (n?.tag === "PAREN" && this.isFunctionNode(n.elts[0]));
+  }
   EXPRS(node, options, resume) {
+    // A function followed by arguments is an application. The parser folds `<x y: add x y> 10`
+    // itself, but leaves a PARENTHESIZED function (`(add) 1`, `(<x y: add x y>) 10`) as a bare
+    // sequence, which used to evaluate each element and keep only one of them.
+    const [fn, ...rest] = node.elts;
+    if (rest.length > 0 && this.isFunctionNode(fn)) {
+      this.visit({ tag: "LIST", elts: rest }, options, (e1, args) => {
+        options.args = args;
+        this.visit(fn, options, (e0, v0) => {
+          resume([].concat(e1).concat(e0), [v0]);
+        });
+      });
+      return;
+    }
     let err = [];
     let val = [];
     for (let elt of node.elts) {
@@ -983,9 +1000,28 @@ export class Transformer extends Visitor {
     resume(err, val);
   }
   LAMBDA(node, options, resume) {
-    // Return a function value.
+    // Visiting a lambda APPLIES it to `options.args` (set by APPLY/MAP/FILTER/REDUCE). With no
+    // application in progress the lambda is itself the value — `<x: mul 2 x>..` — so yield a
+    // function value rather than evaluating the body with its parameters unbound. Parameter
+    // names are read from the AST, not visited: IDENT would resolve an outer binding of the
+    // same name to its value.
+    //
+    // Given FEWER args than parameters (`apply (<x y: add x y>) [10]`, `(add) 1`) the result
+    // is partially evaluated: a lambda value over the parameters still unbound. At least one
+    // arg is required, because MAP spreads a list element into args and an empty element must
+    // still reach the body.
+    const names = this.nodePool[node.elts[0]].elts.map((nid) => this.nodePool[nid].elts[0]);
+    if (options.args === undefined) {
+      resume([], { lambda: { params: names } });
+      return;
+    }
+    const supplied = [].concat(options.args);
+    if (supplied.length > 0 && supplied.length < names.length) {
+      resume([], { lambda: { params: names.slice(supplied.length) } });
+      return;
+    }
     this.visit(node.elts[0], options, (err0, params) => {
-      let args = [].concat(options.args);
+      let args = supplied;
       enterEnv(options, "lambda", params.length);
       params.forEach((param, i) => {
         // let inits = this.nodePool[node.elts[3]].elts;

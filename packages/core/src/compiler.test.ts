@@ -247,6 +247,45 @@ describe("Existing functionality", () => {
       const result = await compile('apply (<x: add x 1>) 10..');
       expect(result).toBe(11);
     });
+
+    // examples.md 62-64: an unapplied lambda is a value, not a body evaluated with its
+    // parameters unbound (which failed in `mul`/`add`, or silently yielded "x").
+    test.each([
+      ["<x: mul 2 x>..", ["x"]],
+      ["<x y: add x y>..", ["x", "y"]],
+      ["<x y z: add x add y z>..", ["x", "y", "z"]],
+      ["<x: x>..", ["x"]],
+      ["let f = <x: mul 2 x>.. f..", ["x"]],
+      ["let x = 5.. <x: x>..", ["x"]],
+      ["(add)..", ["a", "b"]],
+    ])("%s is a lambda value", async (src, params) => {
+      expect(await compile(src)).toEqual({ lambda: { params } });
+    });
+
+    test("a lambda value nested in a record", async () => {
+      expect(await compile("{f: <x: x>}..")).toEqual({ f: { lambda: { params: ["x"] } } });
+    });
+
+    // Too few args partially evaluates: the result is a lambda over the unbound parameters.
+    test.each([
+      ["<x y: add x y> 10..", ["y"]],
+      ["(<x y: add x y>) 10..", ["y"]],
+      ["(<x y z: add x add y z>) 1..", ["y", "z"]],
+      ["(add) 1..", ["b"]],
+      ["apply (<x y: add x y>) [10]..", ["y"]],
+      ["let f = (add) 1.. f..", ["b"]],
+    ])("%s is partially evaluated", async (src, params) => {
+      expect(await compile(src)).toEqual({ lambda: { params } });
+    });
+
+    test.each([
+      ["(<x y: add x y>) 10 20..", 30],
+      ["(add) 1 2..", 3],
+      ["let f = (add) 1.. f 2..", 3],
+      ["apply (<x y: add x y>) [10 20]..", 30],
+    ])("%s applies fully", async (src, expected) => {
+      expect(await compile(src)).toBe(expected);
+    });
   });
 
   describe("Tags", () => {

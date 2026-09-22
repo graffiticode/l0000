@@ -1029,17 +1029,18 @@ export class Transformer extends Visitor {
       });
       return;
     }
-    // Store each value at its SOURCE index. Values arrive in completion order, and a PAREN
-    // takes an extra async hop, so pushing them made `(1) 2..` return 1 — PROG takes the last
-    // element as the program's value.
+    // Execute expressions sequentially so side effects (set-var) complete before
+    // later expressions (get-var) observe them.
     let err = [];
     const val = [];
     let done = 0;
+    options.SYNC = true;
     node.elts.forEach((elt, i) => {
       this.visit(elt, options, (e0, v0) => {
         err = err.concat(e0);
         val[i] = v0;
         if (++done === node.elts.length) {
+          options.SYNC = false;
           resume(err, val);
         }
       });

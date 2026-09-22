@@ -160,8 +160,8 @@ Natural-language prompts for training a RAG model on the L0000 root Graffiticode
 ## 13. Output and Logging
 
 119. Prints the record `{x: 1, y: 2}` to the form using `print`.
-120. Prints the result of `add 1 2` to the form.
-121. Logs the value 42 to the console using `log` and returns it.
+120. Sets a variable `"x"` to 10, then reads it back with `get-var`.
+121. Sets `"a"` to 5 and `"b"` to 7, then returns their sum via `get-var`.
 122. Logs the result of `mul 3 4` and uses the logged value as the program's result.
 
 ## 14. Variable Resolution

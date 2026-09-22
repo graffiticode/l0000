@@ -246,3 +246,10 @@ let double = <x: mul 2 x>..
 let inc = <x: add x 1>..
 map (double) map (inc) [1 2 3]..
 ```
+
+### Processing lists of pairs
+```
+/* To apply a binary function to each pair, use `apply` to spread the list */
+let pairs = [[1 2] [3 4] [5 6]]..
+map (<pair: apply (mul) pair>) pairs..
+```

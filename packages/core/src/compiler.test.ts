@@ -635,3 +635,30 @@ describe("str and template interpolation", () => {
     await expect(compile('concat "a" 1..')).rejects.toBeDefined();
   });
 });
+
+// map/filter/reduce used to hand `forEach` whatever they were given. `get` on a missing
+// key returns undefined by design, so `map (fn) (get "items" (data {}))` with nothing
+// bound threw a raw JS TypeError out of the visitor and surfaced as a compile error
+// carrying a stack trace.
+describe("List builtins on a non-list", () => {
+  test.each([
+    ['map (<x: mul 2 x>) (get "items" (data {}))..', "map"],
+    ['filter (<x: gt x 1>) (get "items" (data {}))..', "filter"],
+    ['reduce (<a b: add a b>) 0 (get "items" (data {}))..', "reduce"],
+  ])("%s reports a compile error", async (src, fn) => {
+    await expect(compile(src)).rejects.toMatchObject([
+      { message: expect.stringContaining(`${fn}: expected a list, got undefined`) },
+    ]);
+  });
+
+  test("names the type it got", async () => {
+    await expect(compile("map (<x: x>) 42..")).rejects.toMatchObject([
+      { message: "map: expected a list, got a number" },
+    ]);
+  });
+
+  test("an upstream binding still maps", async () => {
+    const result = await compile('map (<x: mul 2 x>) (get "items" (data {}))..', { items: [1, 2, 3] });
+    expect(result).toEqual([2, 4, 6]);
+  });
+});

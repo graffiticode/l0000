@@ -142,6 +142,22 @@ function recordHas(rec, recordKey) {
   return recordGet(rec, recordKey) !== undefined;
 }
 
+// MAP, FILTER and REDUCE iterate their list argument directly. `get` on a missing key
+// returns undefined by design (see the "no number-string fallback" test), so
+// `map (fn) (get "items" (data {}))` with no upstream bound handed `forEach` an
+// undefined — a raw JS TypeError thrown out of the visitor, which reached the caller
+// as a compile error carrying a JS stack trace. Report it as an ordinary compile error
+// naming the builtin and the type it got instead.
+function listArgError(fn, val) {
+  const what =
+    val === undefined ? "undefined (a missing key or unbound upstream?)"
+    : val === null ? "null"
+    : isRecord(val) ? "a record"
+    : typeof val === "object" ? "an object"
+    : `a ${typeof val}`;
+  return `${fn}: expected a list, got ${what}`;
+}
+
 function recordRemove(rec, recordKey) {
   const encoded = encodeKey(recordKey);
   const newRec = createRecord();
@@ -1471,6 +1487,10 @@ export class Transformer extends Visitor {
     options.SYNC = true;
     this.visit(node.elts[1], options, (e1, v1) => {
       let err = [].concat(e1);
+      if (!Array.isArray(v1)) {
+        resume([...err, listArgError("map", v1)], []);
+        return;
+      }
       const val = [];
       // Each element is ONE argument. Passing it bare let LAMBDA spread a list element
       // across the parameters, so `map (<x: length x>) [[1 2]]` bound x to 1.
@@ -1489,6 +1509,10 @@ export class Transformer extends Visitor {
     options.SYNC = true;
     this.visit(node.elts[1], options, (e1, v1) => {
       let err = [].concat(e1);
+      if (!Array.isArray(v1)) {
+        resume([...err, listArgError("filter", v1)], []);
+        return;
+      }
       const val = [];
       v1.forEach((elt) => {
         this.visit(node.elts[0], { ...options, SYNC: true, args: [elt] }, (e0, v0) => {
@@ -1510,6 +1534,12 @@ export class Transformer extends Visitor {
       this.visit(node.elts[2], options, (e2, v2) => {
         let err = [].concat(e1).concat(e2);
         let val = v1;
+        if (!Array.isArray(v2)) {
+          // Resume with the accumulator: `reduce` over nothing is the initial value,
+          // which keeps an arithmetic fold from also reporting a NaN downstream.
+          resume([...err, listArgError("reduce", v2)], val);
+          return;
+        }
         v2.forEach((elt) => {
           this.visit(node.elts[0], { ...options, SYNC: true, args: [val, elt] }, (e0, v0) => {
             err = err.concat(e0);

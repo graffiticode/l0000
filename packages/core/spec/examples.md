@@ -149,13 +149,13 @@ Natural-language prompts for training a RAG model on the L0000 root Graffiticode
 
 110. Returns the upstream task data, falling back to `{}` when no upstream is bound, using `data {}`.
 111. Returns the upstream task data, falling back to `{x: 0, y: 0}` when none is bound, using `data {x: 0, y: 0}`.
-112. Declares another L0000 program as the upstream using `data use "0000"`.
-113. Declares an L0000 upstream with `data use "0000"` and returns `{}` when no upstream is bound.
+112. Two L0000 programs. This program binds `data use "0000"` and returns the bound record unchanged. The data program it binds returns `{x: 1, y: 2}`; it computes nothing.
+113. Two L0000 programs. This program binds `data use "0000"` and returns the `title` field, or `"untitled"` when nothing is bound. The data program it binds returns `{title: "Report"}`; it computes nothing.
 114. Retrieves the `title` field of the upstream task data by calling `get "title"` on `data {}`.
 115. Doubles every element of the upstream `items` list by mapping a lambda over `get "items" (data {})`.
-116. Computes the count, total, and average of the `score` fields in the `students` list produced by an upstream L0000 program, using `data use "0000"` and falling back to an empty list when no upstream is bound.
-117. As a pipeline of two L0000 programs: the upstream builds `{students: [...]}` from the scores 85, 92, 78, 95 and 88, and this program returns the highest score.
-118. Reads the `items` list from an upstream L0000 program with `data use "0000"`, keeps the items whose `price` is over 10, and returns them in a record under `expensive`.
+116. Two L0000 programs. This program binds `data use "0000"` and returns the count, total, and average of the `score` fields in the `students` list, falling back to an empty list when nothing is bound. The data program it binds returns `{students: [...]}`, a record whose `students` value is a list of records each having a `score` field, with the scores 85, 92, 78, 95 and 88; it computes nothing.
+117. Two L0000 programs. This program binds `data use "0000"` and returns the highest `score` in the `students` list. The data program it binds returns `{students: [...]}`, a record whose `students` value is a list of records each having a `score` field, with the scores 85, 92, 78, 95 and 88; it computes nothing.
+118. Two L0000 programs. This program binds `data use "0000"`, keeps the items in the `items` list whose `price` is over 10, and returns them in a record under `expensive`. The data program it binds returns `{items: [...]}`, a record whose `items` value is a list of records each having a `name` and a `price`, with the prices 5, 12, 8, 20 and 15; it computes nothing.
 
 ## 13. Output and Logging
 

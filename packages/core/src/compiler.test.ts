@@ -556,6 +556,26 @@ describe("let destructuring", () => {
   });
 });
 
+describe("parameter patterns", () => {
+  // The parser gives `<[x y]: ...>` a hidden parameter and inlines each variable as a VAL of it.
+  test.each([
+    ["<[x y]: add x y>[10 20]..", 30],
+    ["<[x y] z: add add x y z> [10 20] 30..", 60],
+    ["<{a b}: add a b>{a: 1 b: 2}..", 3],
+    ['<{name age: years}: years>{name: "A" age: 3}..', 3],
+    ["<[[a b] c]: add a add b c>[[1 2] 3]..", 6],
+    ["<[_ b]: b>[1 2]..", 2],
+    ["apply (<a [b c]: add a add b c>) [1 [2 3]]..", 6],
+    ["map (<[k v]: add k v>) [[1 2] [3 4]]..", [3, 7]],
+    ['map (<{a}: a>) [{a: 1} {a: 2}]..', [1, 2]],
+    ["reduce (<acc [a b]: add acc mul a b>) 0 [[1 2] [3 4]]..", 14],
+    // Nested lambdas' hidden parameters must not capture each other.
+    ["map (<[a]: map (<[b]: add a b>) [[10] [20]]>) [[1] [2]]..", [[11, 21], [12, 22]]],
+  ])("%s", async (src, expected) => {
+    expect(await compile(src)).toEqual(expected);
+  });
+});
+
 describe("map, filter and reduce pass each element as ONE argument", () => {
   // Elements used to be spread across the lambda's parameters (a list element bound its
   // first item), deep-copied through JSON (erasing records), and an empty list never resumed.

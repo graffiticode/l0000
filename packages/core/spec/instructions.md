@@ -142,8 +142,17 @@ let [a b] = [1 2]..
 let {name age: years} = person..
 ```
 
-A `let` pattern may only bind variables (and use `_`). Function parameters cannot be patterns:
-`<[a b]: ...>` is an error. Destructure in the body instead: `<p: case p of [a b]: ... end>`.
+Lambda parameters destructure the same way. A pattern parameter takes one argument, and its
+variables are bound in the body. The first line below evaluates to 60:
+
+```
+<[x y] z: add add x y z> [10 20] 30..
+map (<{name age: years}: years>) people..
+```
+
+A `let` or parameter pattern may only bind variables (and use `_`), and never fails to match:
+a missing element or field is undefined. Use `case` when a value's shape varies. Parameters of
+a named function (`let f [a b] = ...`) cannot be patterns.
 
 ## Record Shorthand
 

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # L0000 RAG Training Examples
 
-Natural-language prompts for training a RAG model on the L0000 root Graffiticode language. Organized progressively from atomic operations to idiomatic compositions, then to cross-language and ancillary features. Every base-library builtin and every syntactic feature called out in the spec is exercised at least once directly, with additional prompts for common compositions.
+Natural-language prompts for training a RAG model on the L0000 root Graffiticode language. Organized progressively from atomic operations to idiomatic compositions, then to upstream data (`data` / `use`) and ancillary features. Every base-library builtin and every syntactic feature called out in the spec is exercised at least once directly, with additional prompts for common compositions.
 
 ## 1. Arithmetic
 
@@ -145,29 +145,32 @@ Natural-language prompts for training a RAG model on the L0000 root Graffiticode
 108. Partitions `[1 2 3 4 5 6]` into a record `{evens, odds}` using two `filter` calls.
 109. Computes the average of `[2 4 6 8]` by dividing the sum by the length.
 
-## 12. Cross-Language Composition
+## 12. Upstream Data and Self-Composition
 
 110. Returns the upstream task data, falling back to `{}` when no upstream is bound, using `data {}`.
 111. Returns the upstream task data, falling back to `{x: 0, y: 0}` when none is bound, using `data {x: 0, y: 0}`.
-112. Declares L0166 as the upstream language using `data use "0166"`.
-113. Declares L0001 as the upstream language and falls back to `{}` if no upstream is bound.
+112. Declares another L0000 program as the upstream using `data use "0000"`.
+113. Declares an L0000 upstream with `data use "0000"` and returns `{}` when no upstream is bound.
 114. Retrieves the `title` field of the upstream task data by calling `get "title"` on `data {}`.
 115. Doubles every element of the upstream `items` list by mapping a lambda over `get "items" (data {})`.
+116. Computes the count, total, and average of the `score` fields in the `students` list produced by an upstream L0000 program, using `data use "0000"` and falling back to an empty list when no upstream is bound.
+117. As a pipeline of two L0000 programs: the upstream builds `{students: [...]}` from the scores 85, 92, 78, 95 and 88, and this program returns the highest score.
+118. Reads the `items` list from an upstream L0000 program with `data use "0000"`, keeps the items whose `price` is over 10, and returns them in a record under `expensive`.
 
 ## 13. Output and Logging
 
-116. Prints the record `{x: 1, y: 2}` to the form using `print`.
-117. Prints the result of `add 1 2` to the form.
-118. Logs the value 42 to the console using `log` and returns it.
-119. Logs the result of `mul 3 4` and uses the logged value as the program's result.
+119. Prints the record `{x: 1, y: 2}` to the form using `print`.
+120. Prints the result of `add 1 2` to the form.
+121. Logs the value 42 to the console using `log` and returns it.
+122. Logs the result of `mul 3 4` and uses the logged value as the program's result.
 
 ## 14. Variable Resolution
 
-120. Reads the value of the variable named `"count"` using `get-var`.
-121. Sets the variable `"count"` to 42 using `set-var`.
-122. Resolves the public variable `"itemId"` using `get-val-public`.
+123. Reads the value of the variable named `"count"` using `get-var`.
+124. Sets the variable `"count"` to 42 using `set-var`.
+125. Resolves the public variable `"itemId"` using `get-val-public`.
 
 ## 15. Comments
 
-123. Adds 1 and 2 with the block comment `/* sum two numbers */` placed before the expression.
-124. Defines a `double` lambda preceded by a multi-line block comment that explains its purpose.
+126. Adds 1 and 2 with the block comment `/* sum two numbers */` placed before the expression.
+127. Defines a `double` lambda preceded by a multi-line block comment that explains its purpose.

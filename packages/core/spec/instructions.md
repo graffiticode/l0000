@@ -215,7 +215,46 @@ This is equivalent to `{x: 1, y: 2, z: 3}`.
 | `sub` | `<number number: number>` | Subtracts numbers |
 | `take` | `<integer list: list>` | Returns the first n elements of a list |
 | `tl` | `<list: list>` | All items except first |
-| `use` | `<string: record>` | Inside `data`, declares the upstream language whose output is expected (e.g. `data use "0166"`). Evaluates to `{}` when no upstream is bound |
+| `use` | `<string: record>` | Inside `data`, declares the upstream language whose output is expected (e.g. `data use "0000"`). Evaluates to `{}` when no upstream is bound; see Pipeline Composition |
+
+## Pipeline Composition
+
+An L0000 program can consume the output of **another L0000 program** — its upstream. The only
+upstream L0000 may bind is L0000 itself: `data use "0000"`. Never write `use` with any other
+language id.
+
+**When to bind.** Only when the request explicitly describes two programs: one that *produces*
+data and one that *consumes* it — e.g. "an upstream program that builds X, and a program that
+computes Y from it", "compute Y over the output of another L0000 program", "as a pipeline". A
+request that supplies its data inline, or does not mention a separate producer, is a single
+program: author the data as a literal and emit no binding.
+
+**When you bind, the binding is REQUIRED.** Write `data use "0000"` in the program you return —
+it is what causes the platform to generate the upstream program. Describing the upstream data
+without the binding yields an empty input.
+
+**Write only the consumer.** The upstream program is generated separately; do not author it
+here. Assume it returns a **record** whose keys name its content (e.g. `{students: [...]}`), and
+read those keys from the bound value.
+
+**Guard for no upstream.** When nothing is chained, `data use "0000"` evaluates to `{}`, so a
+bare `get "students"` returns nothing and `map` over it fails. Destructure with `case` and give
+a fallback:
+
+```
+let roster = data use "0000"..
+let scores = case roster of
+  {students}: map (<s: get "score" s>) students
+  _: []
+end..
+let total = reduce (<a b: add a b>) 0 scores..
+let count = length scores..
+{count total average: case count of 0: 0 _: div total count end}..
+```
+
+**Finish-time check.** If the request describes a separate producer program, confirm your
+program contains `data use "0000"` exactly once and contains no other `use`. If it does not
+describe one, confirm your program contains no `use` at all.
 
 ## Examples
 

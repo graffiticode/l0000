@@ -415,6 +415,45 @@ describe("View", () => {
       expect(screen.getByText("1 of 3 points")).toBeTruthy();
     });
 
+    test("Check is a toggle: pressing it again hides the score and the feedback", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored });
+      const View = await loadView();
+      render(<Wrapper><View Form={CountingForm} score={score} /></Wrapper>);
+      const check = await screen.findByRole("button", { name: "Check" });
+      await act(async () => { check.click(); });
+      expect(check.getAttribute("aria-pressed")).toBe("true");
+      expect(lastData.showValidationUI).toBe(true);
+
+      await act(async () => { check.click(); });
+      expect(check.getAttribute("aria-pressed")).toBe("false");
+      expect(lastData.showValidationUI).toBeUndefined();
+      expect(screen.queryByText(/of 3 points/)).toBeNull();
+    });
+
+    test("Check waits until the language says the response is complete", async () => {
+      // Complete once two cells are filled.
+      const partial = (data: any) =>
+        data?.validation
+          ? { score: 0, max: 3, complete: Object.keys(data.cells || {}).length >= 2 }
+          : undefined;
+      setSearch("?id=abc123");
+      stubApi({ stored });
+      const View = await loadView();
+      render(<Wrapper><View Form={CountingForm} score={partial} /></Wrapper>);
+      const check = (await screen.findByRole("button", { name: "Check" })) as HTMLButtonElement;
+      expect(check.disabled, "Check before anything is answered").toBe(true);
+      expect(screen.getByText("Answer everything to check.")).toBeTruthy();
+
+      await act(async () => { apply({ type: "response", args: { cells: { A1: { text: "1" } } } }); });
+      await tick(80);
+      expect(check.disabled, "Check with one of two answered").toBe(true);
+
+      await act(async () => { apply({ type: "response", args: { cells: { A1: { text: "1" }, A2: { text: "2" } } } }); });
+      await tick(80);
+      expect(check.disabled).toBe(false);
+    });
+
     test("an update that changes nothing keeps the check — L0179 reports one on every caret move", async () => {
       setSearch("?id=abc123");
       stubApi({ stored: { ...stored, cells: { A1: { text: "4" } } } });

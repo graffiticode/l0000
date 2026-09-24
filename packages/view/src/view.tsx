@@ -63,8 +63,11 @@
 // ── score: checking is the host's, not the Form's ──────────────────────────────────────────
 //
 // An assessment language passes `score`, and the View shows a Check button under the Form.
-// Pressing it shows the score and hands the Form `showValidationUI: true` until the learner
-// next changes the model (an `update` or `response` that changes nothing does not count). That flag is the one Learnosity sets through cqt, so a Form draws
+// Check is a toggle: pressing it shows the score and hands the Form `showValidationUI: true`,
+// pressing it again hides both, and so does the learner's next change to the model (an
+// `update` or `response` that changes nothing does not count) — feedback returns to whatever
+// the program's instant-feedback says. Check stays disabled until `score` reports the
+// response `complete`. That flag is the one Learnosity sets through cqt, so a Form draws
 // feedback from it and nothing else, and never needs to know which host it is in. It is laid
 // over what the Form sees only: it is not in the model, so it is never posted or compiled.
 // Whether feedback also shows WITHOUT a check (instant feedback) is the program's to say, and
@@ -115,6 +118,11 @@ export type FormModel = "live" | "loaded";
 export interface Score {
   score: number;
   max: number;
+  /**
+   * Whether the learner has answered everything. `false` keeps Check disabled until they have;
+   * absent counts as complete, so a language that does not say never blocks the button.
+   */
+  complete?: boolean;
 }
 
 /**
@@ -380,7 +388,7 @@ export const View = ({
     return (
       <>
         <Form state={formState} />
-        <CheckBar result={result} checked={checked} onCheck={() => setChecked(true)} />
+        <CheckBar result={result} checked={checked} onToggle={() => setChecked((c) => !c)} />
       </>
     );
   }
@@ -410,43 +418,77 @@ export const View = ({
 /**
  * The host's Check button and the score it reveals. Exported for hosts that mount a Form without
  * the View (the MCP widget), so every one of our hosts checks the same way.
+ *
+ * Drawn as player chrome — its own bordered strip, set apart from the question — because it is
+ * the host's control, not part of the interaction. It is a toggle (`aria-pressed`), disabled
+ * until the response is complete; a check already showing can always be hidden.
  */
 export const CheckBar = ({
   result,
   checked,
-  onCheck,
+  onToggle,
 }: {
   result: Score;
   checked: boolean;
-  onCheck: () => void;
-}) => (
-  <div style={CHECK_BAR_STYLE}>
-    <button type="button" style={CHECK_BUTTON_STYLE} onClick={onCheck} disabled={checked}>
-      Check
-    </button>
-    <span aria-live="polite" style={{ color: "#52525b", minWidth: "8em" }}>
-      {checked ? `${result.score} of ${result.max} points` : ""}
-    </span>
-  </div>
-);
+  onToggle: () => void;
+}) => {
+  const waiting = !checked && result.complete === false;
+  return (
+    <div role="group" aria-label="Check your answers" style={CHECK_BAR_STYLE}>
+      <button
+        type="button"
+        aria-pressed={checked}
+        style={{ ...CHECK_BUTTON_STYLE, ...(checked ? CHECK_BUTTON_ON : {}), ...(waiting ? CHECK_BUTTON_OFF : {}) }}
+        onClick={onToggle}
+        disabled={waiting}
+      >
+        Check
+      </button>
+      <span aria-live="polite" style={{ color: "#52525b", minWidth: "10em" }}>
+        {checked
+          ? `${result.score} of ${result.max} points`
+          : waiting
+            ? "Answer everything to check."
+            : ""}
+      </span>
+    </div>
+  );
+};
 
 const CHECK_BAR_STYLE: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   gap: "12px",
-  padding: "12px",
+  margin: "12px auto 0",
+  maxWidth: "64rem",
+  padding: "10px 16px",
+  border: "1px solid #d4d4d8",
+  borderRadius: "8px",
+  background: "#f4f4f5",
   font: "14px/1.4 system-ui, sans-serif",
+  boxSizing: "border-box",
 };
 
 const CHECK_BUTTON_STYLE: CSSProperties = {
   padding: "8px 16px",
-  border: "none",
+  border: "1px solid #18181b",
   borderRadius: "6px",
   background: "#18181b",
   color: "#fff",
   fontWeight: 500,
   cursor: "pointer",
+};
+
+/** Pressed: the check is showing, and pressing again hides it. */
+const CHECK_BUTTON_ON: CSSProperties = {
+  background: "#fff",
+  color: "#18181b",
+};
+
+const CHECK_BUTTON_OFF: CSSProperties = {
+  opacity: 0.45,
+  cursor: "default",
 };
 
 const MESSAGE_STYLE: CSSProperties = {

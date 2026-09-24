@@ -365,4 +365,69 @@ describe("View", () => {
       expect(lastData).toEqual([1, 2]);
     });
   });
+
+  describe("score: the host's Check button", () => {
+    // A scorer that counts filled cells, as an assessment language's would count right answers.
+    const score = (data: any) =>
+      data?.validation ? { score: Object.keys(data.cells || {}).length, max: 3 } : undefined;
+    const stored = { validation: { points: 3 }, interaction: {} };
+
+    test("no score, no Check button — every other language renders exactly as before", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored });
+      const View = await loadView();
+      render(<Wrapper><View Form={CountingForm} /></Wrapper>);
+      await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+      expect(screen.queryByRole("button", { name: "Check" })).toBeNull();
+    });
+
+    test("nothing to check, no Check button", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored: { interaction: {} } });
+      const View = await loadView();
+      render(<Wrapper><View Form={CountingForm} score={score} /></Wrapper>);
+      await waitFor(() => expect(screen.getByTestId("form")).toBeTruthy());
+      expect(screen.queryByRole("button", { name: "Check" })).toBeNull();
+    });
+
+    test("Check shows the score and hands the Form showValidationUI until the next change", async () => {
+      setSearch("?id=abc123");
+      const { compilePosts } = stubApi({ stored });
+      const View = await loadView();
+      render(<Wrapper><View Form={CountingForm} score={score} /></Wrapper>);
+      const check = await screen.findByRole("button", { name: "Check" });
+      expect(lastData.showValidationUI, "feedback before any check").toBeUndefined();
+
+      await act(async () => { check.click(); });
+      expect(lastData.showValidationUI).toBe(true);
+      expect(screen.getByText("0 of 3 points")).toBeTruthy();
+
+      await act(async () => { apply({ type: "response", args: { cells: { B3: { text: "60" } } } }); });
+      await tick(80);
+      expect(lastData.showValidationUI, "a change must hide the last check").toBeUndefined();
+      expect(screen.queryByText(/of 3 points/)).toBeNull();
+      expect(
+        compilePosts.every((d) => d.showValidationUI === undefined),
+        "the check is host state, never posted to the compiler",
+      ).toBe(true);
+
+      await act(async () => { screen.getByRole("button", { name: "Check" }).click(); });
+      expect(screen.getByText("1 of 3 points")).toBeTruthy();
+    });
+
+    test("an update that changes nothing keeps the check — L0179 reports one on every caret move", async () => {
+      setSearch("?id=abc123");
+      stubApi({ stored: { ...stored, cells: { A1: { text: "4" } } } });
+      const View = await loadView();
+      render(<Wrapper><View Form={CountingForm} score={score} /></Wrapper>);
+      const check = await screen.findByRole("button", { name: "Check" });
+      await act(async () => { check.click(); });
+      expect(lastData.showValidationUI).toBe(true);
+
+      await act(async () => { apply({ type: "update", args: { cells: { A1: { text: "4" } } } }); });
+      await tick(80);
+      expect(lastData.showValidationUI, "a no-op update hid the check").toBe(true);
+      expect(screen.getByText("1 of 3 points")).toBeTruthy();
+    });
+  });
 });

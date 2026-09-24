@@ -59,6 +59,16 @@
 // cases without restating the generic ones. This exists because L0179 injects L0166's
 // spreadsheet Form, whose `update` must merge cell text into `data.interaction.cells` rather
 // than onto the top level — a shape that has no business being hardcoded here.
+//
+// ── score: checking is the host's, not the Form's ──────────────────────────────────────────
+//
+// An assessment language passes `score`, and the View shows a Check button under the Form.
+// Pressing it shows the score and hands the Form `showValidationUI: true` until the learner
+// next changes the model (an `update` or `response` that changes nothing does not count). That flag is the one Learnosity sets through cqt, so a Form draws
+// feedback from it and nothing else, and never needs to know which host it is in. It is laid
+// over what the Form sees only: it is not in the model, so it is never posted or compiled.
+// Whether feedback also shows WITHOUT a check (instant feedback) is the program's to say, and
+// the Form reads that from the model itself.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import useSWR from "swr";
@@ -100,6 +110,18 @@ export type FormComponent = ComponentType<FormProps>;
  *            seeds itself from the model and owns its editing state thereafter).
  */
 export type FormModel = "live" | "loaded";
+
+/** A learner's score, as the Check button reports it. */
+export interface Score {
+  score: number;
+  max: number;
+}
+
+/**
+ * Score the live model, or return `undefined` when it has nothing to check (no answer key, no
+ * blanks). Called on every change, so keep it cheap and never throw.
+ */
+export type LanguageScore = (data: any) => Score | undefined;
 
 /** Actions that represent a user changing the form, and so warrant a recompile. */
 const RECOMPILE_ON = new Set(["update", "response"]);
@@ -221,10 +243,12 @@ export const View = ({
   Form,
   reduce,
   formModel = "live",
+  score,
 }: {
   Form: FormComponent;
   reduce?: LanguageReducer;
   formModel?: FormModel;
+  score?: LanguageScore;
 }) => {
   const [params] = useState(() => new URLSearchParams(window.location.search));
   const [id] = useState<string | undefined>(params.get("id") ?? undefined);
@@ -327,7 +351,21 @@ export const View = ({
   // the fallback covers the one case where they can disagree about EXISTENCE rather than
   // content: a model that arrived without ever passing through an external load.
   const formData = hasRenderable(renderData, []) ? renderData : data;
-  const formState = useMemo(() => ({ data: formData, errors, apply }), [formData, errors]);
+
+  // Checking. A change the learner makes hides the result again; a compile does not, since it
+  // only echoes a change that already did. Keyed on `compileSeq`, which moves only when an
+  // `update`/`response` actually changed the model: L0179 reports both on every caret move, and
+  // clearing on the action alone wiped the check the moment the learner clicked a cell.
+  const [checked, setChecked] = useState(false);
+  useEffect(() => setChecked(false), [compileSeq]);
+  // Scored from the live model, which under `formModel: "loaded"` is not what the Form renders.
+  const result = useMemo(
+    () => (score && errors.length === 0 ? score(data) : undefined),
+    [score, data, errors],
+  );
+  const shown =
+    checked && result && isPlainObject(formData) ? { ...formData, showValidationUI: true } : formData;
+  const formState = useMemo(() => ({ data: shown, errors, apply }), [shown, errors]);
 
   // Render priority: real content first; otherwise surface why there's none.
   // A getData failure (e.g. a stale/expired token 401ing a public read) used to
@@ -338,7 +376,13 @@ export const View = ({
   const retry = useCallback(() => getDataResp.mutate(), [getDataResp]);
 
   if (hasRenderable(data, errors)) {
-    return <Form state={formState} />;
+    if (!result) return <Form state={formState} />;
+    return (
+      <>
+        <Form state={formState} />
+        <CheckBar result={result} checked={checked} onCheck={() => setChecked(true)} />
+      </>
+    );
   }
   if (getDataResp.error) {
     return (
@@ -361,6 +405,48 @@ export const View = ({
     );
   }
   return <div />;
+};
+
+/**
+ * The host's Check button and the score it reveals. Exported for hosts that mount a Form without
+ * the View (the MCP widget), so every one of our hosts checks the same way.
+ */
+export const CheckBar = ({
+  result,
+  checked,
+  onCheck,
+}: {
+  result: Score;
+  checked: boolean;
+  onCheck: () => void;
+}) => (
+  <div style={CHECK_BAR_STYLE}>
+    <button type="button" style={CHECK_BUTTON_STYLE} onClick={onCheck} disabled={checked}>
+      Check
+    </button>
+    <span aria-live="polite" style={{ color: "#52525b", minWidth: "8em" }}>
+      {checked ? `${result.score} of ${result.max} points` : ""}
+    </span>
+  </div>
+);
+
+const CHECK_BAR_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "12px",
+  padding: "12px",
+  font: "14px/1.4 system-ui, sans-serif",
+};
+
+const CHECK_BUTTON_STYLE: CSSProperties = {
+  padding: "8px 16px",
+  border: "none",
+  borderRadius: "6px",
+  background: "#18181b",
+  color: "#fff",
+  fontWeight: 500,
+  cursor: "pointer",
 };
 
 const MESSAGE_STYLE: CSSProperties = {

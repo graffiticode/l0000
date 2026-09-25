@@ -21,7 +21,8 @@
 // are admitted for every compile of that language, and must never synthesize a
 // protected node the pool did not contain.
 
-import type { ExecContext } from "./exec-context.js";
+import { EXEC_MODES } from "./exec-context.js";
+import type { ExecContext, ExecMode } from "./exec-context.js";
 
 export type ProtectedFunctionKind = "read" | "write" | "sign";
 
@@ -29,7 +30,20 @@ export interface ProtectedFunctionSpec {
   // The permission key: the stable function name a grant names.
   fn: string;
   kind: ProtectedFunctionKind;
+  // Execution modes the function may run in. Defaults: a write runs only in
+  // `save`; anything else in every mode. A function whose authority exceeds an
+  // ordinary render (e.g. Author API signing) must narrow this.
+  modes?: ExecMode[];
 }
+
+export function permittedModes(spec: ProtectedFunctionSpec): readonly ExecMode[] {
+  if (Array.isArray(spec.modes)) {
+    return spec.modes;
+  }
+  return spec.kind === "write" ? ["save"] : EXEC_MODES;
+}
+
+const runsIn = (spec: ProtectedFunctionSpec, exec: ExecContext) => permittedModes(spec).includes(exec.mode);
 
 // Keyed by node tag (the lexicon entry's `name`).
 export type ProtectedFunctions = Record<string, ProtectedFunctionSpec>;
@@ -85,9 +99,10 @@ export function findProtectedNodes(nodePool: any, protectedFunctions: ProtectedF
 }
 
 // Decides every protected node before transformation:
-// - a write in a non-save invocation is DISABLED: it will evaluate to a
-//   sentinel without evaluating its arguments (which could themselves call
-//   protected functions), and it will never mint a write token;
+// - a function outside its permitted modes (every write outside save mode) is
+//   DISABLED: it evaluates to a sentinel without evaluating its arguments
+//   (which could themselves call protected functions), and it never mints a
+//   token;
 // - otherwise, a function missing from the policy snapshot is an error.
 // The snapshot is fetched once, only when protected nodes exist, and fails
 // closed: no policy client, a failed fetch, or a malformed response means
@@ -121,8 +136,11 @@ export async function admitProtectedFunctions({
     if (!node && spec.kind === "write") {
       return [errorAt(`Implicit protected function ${spec.fn} cannot be a write.`, null)];
     }
+    if (spec.kind === "write" && permittedModes(spec).some((m) => m !== "save")) {
+      return [errorAt(`Protected write ${spec.fn} may only run in save mode.`, null)];
+    }
   }
-  const needsPolicy = found.filter(({ spec }) => !(spec.kind === "write" && exec.mode !== "save"));
+  const needsPolicy = found.filter(({ spec }) => runsIn(spec, exec));
   let allowed = new Set<string>();
   if (needsPolicy.length > 0) {
     const fns = [...new Set(needsPolicy.map(({ spec }) => spec.fn))];
@@ -141,8 +159,13 @@ export async function admitProtectedFunctions({
   }
   const errors: AdmissionError[] = [];
   for (const { node, spec } of found) {
-    if (spec.kind === "write" && exec.mode !== "save") {
-      exec.disable(node, spec.fn);
+    if (!runsIn(spec, exec)) {
+      if (!node) {
+        // An implicit function has no node to skip.
+        errors.push(errorAt(`${spec.fn} cannot run in ${exec.mode} mode.`, null));
+      } else {
+        exec.disable(node, spec.fn, spec.kind === "write" ? "write-disabled" : "mode-disabled");
+      }
     } else if (!allowed.has(spec.fn)) {
       errors.push(
         errorAt(

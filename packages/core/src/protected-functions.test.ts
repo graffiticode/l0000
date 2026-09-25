@@ -7,10 +7,13 @@ const lex = {
   ...lexicon,
   "save-it": { tk: 1, name: "SAVE_IT", cls: "function", length: 1, arity: 1 },
   "peek-it": { tk: 1, name: "PEEK_IT", cls: "function", length: 1, arity: 1 },
+  "edit-it": { tk: 1, name: "EDIT_IT", cls: "function", length: 1, arity: 1 },
 };
 const protectedFunctions = {
   SAVE_IT: { fn: "save-it", kind: "write" as const },
   PEEK_IT: { fn: "peek-it", kind: "read" as const },
+  // Like Author API signing: authority beyond an ordinary render.
+  EDIT_IT: { fn: "edit-it", kind: "sign" as const, modes: ["author" as const] },
 };
 
 let calls: { fn: string; arg: any }[];
@@ -25,6 +28,12 @@ class ToyTransformer extends Transformer {
     this.visit(node.elts[0], options, (e0, v0) => {
       calls.push({ fn: "save-it", arg: v0 });
       resume([].concat(e0), { saved: v0 });
+    });
+  }
+  EDIT_IT(node, options, resume) {
+    this.visit(node.elts[0], options, (e0, v0) => {
+      calls.push({ fn: "edit-it", arg: v0 });
+      resume([].concat(e0), { edited: v0 });
     });
   }
   PEEK_IT(node, options, resume) {
@@ -290,6 +299,55 @@ describe("implicit protected functions", () => {
     const { err } = await runImplicit("add 1 2..", { implicit: [{ fn: "save-it", kind: "write" }], allowed: ["save-it"], mode: "save" });
     expect(err[0].message).toMatch(/cannot be a write/);
     expect(transformerRuns).toBe(0);
+  });
+});
+
+describe("mode-restricted functions", () => {
+  test.each(["save", "read", "render", "verify", "corpus"])("are disabled in %s mode without consulting policy", async (mode) => {
+    // The nested read is still admitted (the scan is conservative); the
+    // disabled function is never asked about and its argument never runs.
+    const policy = policyAllowing(["edit-it", "peek-it"]);
+    const { err, val } = await run("edit-it (peek-it 1)..", { mode, policy });
+    expect(err).toEqual([]);
+    expect(val).toEqual({ skipped: "mode-disabled", fn: "edit-it" });
+    expect(calls).toEqual([]);
+    expect(policy.requests.map((r) => r.fns)).toEqual([["peek-it"]]);
+  });
+
+  test("run in their mode when granted", async () => {
+    const { err, val } = await run("edit-it 1..", { mode: "author", allowed: ["edit-it"] });
+    expect(err).toEqual([]);
+    expect(val).toEqual({ edited: 1 });
+  });
+
+  test("are refused in their mode without a grant", async () => {
+    const { err } = await run("edit-it 1..", { mode: "author", allowed: [] });
+    expect(err[0].message).toMatch(/edit-it is not permitted/);
+    expect(transformerRuns).toBe(0);
+  });
+
+  test("writes are disabled in author mode", async () => {
+    const { err, val } = await run("save-it 1..", { mode: "author", allowed: ["save-it"] });
+    expect(err).toEqual([]);
+    expect(val).toEqual({ skipped: "write-disabled", fn: "save-it" });
+    expect(calls).toEqual([]);
+  });
+
+  test("a write declared runnable outside save mode is a language bug", async () => {
+    const code = await parser.parse(0, "save-it 1..", lex);
+    const compiler = new Compiler({
+      langID: "9999",
+      Checker,
+      Transformer: ToyTransformer,
+      Renderer,
+      protectedFunctions: { SAVE_IT: { fn: "save-it", kind: "write", modes: ["save", "read"] } },
+      policy: policyAllowing(["save-it"]),
+    });
+    const { err } = await new Promise<any>((resolve) =>
+      compiler.compile(code, {}, {}, (e, v) => resolve({ err: e ?? [], val: v }), { uid: "u1", connectionId: "c", mode: "read" }),
+    );
+    expect(err[0].message).toMatch(/may only run in save mode/);
+    expect(calls).toEqual([]);
   });
 });
 

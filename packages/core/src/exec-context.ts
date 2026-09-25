@@ -17,9 +17,18 @@
 
 import { randomUUID } from "crypto";
 
-export type ExecMode = "save" | "read" | "render" | "verify" | "corpus";
+// `author` is set only by the owner's authoring entry point (opening the
+// Learnosity Author Site); like `save`, no program can select it.
+export type ExecMode = "save" | "author" | "read" | "render" | "verify" | "corpus";
 
-const EXEC_MODES: readonly ExecMode[] = ["save", "read", "render", "verify", "corpus"];
+export const EXEC_MODES: readonly ExecMode[] = ["save", "author", "read", "render", "verify", "corpus"];
+
+// What a protected node disabled for this invocation evaluates to: a write
+// outside save mode, or any function outside the modes it permits.
+export interface SkippedResult {
+  skipped: "write-disabled" | "mode-disabled";
+  fn: string;
+}
 
 export interface ExecIdentity {
   uid?: string | null;
@@ -35,7 +44,7 @@ export class ExecContext {
   #snapshot: unknown = undefined;
   // Protected write nodes this invocation must not execute (non-save mode),
   // keyed by pool node identity. Decided before transformation.
-  #disabled = new WeakMap<object, { skipped: "write-disabled"; fn: string }>();
+  #disabled = new WeakMap<object, SkippedResult>();
 
   constructor(identity: ExecIdentity = {}) {
     this.uid = typeof identity.uid === "string" && identity.uid ? identity.uid : null;
@@ -61,12 +70,12 @@ export class ExecContext {
     this.#snapshot = snapshot;
   }
 
-  disable(node: object, fn: string): void {
-    this.#disabled.set(node, Object.freeze({ skipped: "write-disabled" as const, fn }));
+  disable(node: object, fn: string, skipped: SkippedResult["skipped"] = "write-disabled"): void {
+    this.#disabled.set(node, Object.freeze({ skipped, fn }));
   }
 
-  // The sentinel a disabled write evaluates to, or undefined when the node runs.
-  skippedResultFor(node: object): { skipped: "write-disabled"; fn: string } | undefined {
+  // The sentinel a disabled node evaluates to, or undefined when the node runs.
+  skippedResultFor(node: object): SkippedResult | undefined {
     return node && typeof node === "object" ? this.#disabled.get(node) : undefined;
   }
 }

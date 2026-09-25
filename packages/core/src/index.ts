@@ -7,9 +7,9 @@
 // child word shadow a base one unless the override is declared.
 
 export { Visitor, Checker, Transformer, Renderer, Compiler } from "./compiler.js";
-export { ExecContext, execContextOf } from "./exec-context.js";
-export type { ExecMode, ExecIdentity } from "./exec-context.js";
-export { findProtectedNodes, parseSnapshot } from "./protected-functions.js";
+export { ExecContext, execContextOf, EXEC_MODES } from "./exec-context.js";
+export type { ExecMode, ExecIdentity, SkippedResult } from "./exec-context.js";
+export { findProtectedNodes, parseSnapshot, permittedModes } from "./protected-functions.js";
 export type {
   ProtectedFunctionKind,
   ProtectedFunctionSpec,

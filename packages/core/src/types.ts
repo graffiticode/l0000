@@ -58,4 +58,6 @@ export interface CompilerConfig {
   Checker?: new (code: NodePool) => any;
   Transformer?: new (code: NodePool) => any;
   Renderer?: new (data: any) => any;
+  protectedFunctions?: import("./protected-functions.js").ProtectedFunctions;
+  policy?: import("./protected-functions.js").PolicyClient;
 }

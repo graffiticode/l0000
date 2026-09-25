@@ -7,6 +7,7 @@ const Decimal: any = (DecimalImport as any)?.default ?? DecimalImport;
 import crypto from 'crypto';
 import { validateAgainstSchema, getLanguageSchema } from "./schema-validator.js";
 import { ExecContext, bindExecContext, execContextOf } from "./exec-context.js";
+import { admitProtectedFunctions } from "./protected-functions.js";
 
 // Decrypts secret values written by the console. Must stay in lockstep with
 // console src/lib/secret-crypto.ts. Understands two ciphertext formats:
@@ -929,6 +930,18 @@ export class Transformer extends Visitor {
     super(nodePool);
     this.patternNodePool = ['unused'];
     this.patternNodeMap = {};
+  }
+  // A protected write disabled for this invocation (see protected-functions.ts)
+  // evaluates to its sentinel WITHOUT visiting its arguments: evaluating them
+  // could itself exercise protected functions.
+  visit(nid, options, resume) {
+    const node = nid && typeof nid === "object" ? nid : this.nodePool[nid];
+    const skipped = this.execContext?.skippedResultFor(node);
+    if (skipped) {
+      resume([], skipped);
+      return;
+    }
+    super.visit(nid, options, resume);
   }
   transform(options, resume) {
     const nid = this.root;
@@ -2131,6 +2144,11 @@ export class Compiler {
     this.Checker = config.Checker || Checker;
     this.Transformer = config.Transformer || Transformer;
     this.Renderer = config.Renderer || Renderer;
+    // Protected functions this language exposes, keyed by node tag, and the
+    // client that fetches this invocation's policy snapshot. A language without
+    // protected functions pays nothing.
+    this.protectedFunctions = config.protectedFunctions || {};
+    this.policy = config.policy;
   }
   compile(code, data, config, resume, identity?) {
     // Compiler takes an AST in the form of a node pool (code) and transforms it
@@ -2148,28 +2166,49 @@ export class Compiler {
         result: '',
       };
       const exec = new ExecContext(identity);
-      const checker = new this.Checker(code);
-      bindExecContext(checker, exec);
-      checker.check(options, (err, val) => {
-        const normalized = normalizeErrors(err);
-        if (normalized.length > 0) {
-          resume(normalized);
-        } else {
-          const transformer = new this.Transformer(code);
-          bindExecContext(transformer, exec);
-          transformer.transform(options, (err, val) => {
-            const normalized = normalizeErrors(err);
-            if (normalized.length > 0) {
-              resume(normalized, val);
-            } else {
-              const renderer = new this.Renderer(val);
-              renderer.render(options, (err, val) => {
-                resume(normalizeErrors(err), val);
-              });
-            }
-          });
-        }
-      });
+      const runChecker = () => {
+        const checker = new this.Checker(code);
+        bindExecContext(checker, exec);
+        checker.check(options, (err, val) => {
+          const normalized = normalizeErrors(err);
+          if (normalized.length > 0) {
+            resume(normalized);
+          } else {
+            const transformer = new this.Transformer(code);
+            bindExecContext(transformer, exec);
+            transformer.transform(options, (err, val) => {
+              const normalized = normalizeErrors(err);
+              if (normalized.length > 0) {
+                resume(normalized, val);
+              } else {
+                const renderer = new this.Renderer(val);
+                renderer.render(options, (err, val) => {
+                  resume(normalizeErrors(err), val);
+                });
+              }
+            });
+          }
+        });
+      };
+      if (Object.keys(this.protectedFunctions).length === 0) {
+        runChecker();
+        return;
+      }
+      // Protected functions are admitted (or refused, or disabled) before the
+      // checker runs, so a refusal means the transformer never begins.
+      admitProtectedFunctions({
+        nodePool: code,
+        protectedFunctions: this.protectedFunctions,
+        exec,
+        langID: this.langID,
+        policy: this.policy,
+      }).then(
+        (errors) => (errors.length > 0 ? resume(normalizeErrors(errors)) : runChecker()),
+        (x) => {
+          console.log("ERROR admitting protected functions", x?.message);
+          resume([{ message: "Permission check failed", from: -1, to: -1 }]);
+        },
+      );
     } catch (x) {
       console.log("ERROR with code");
       console.log(x.stack);

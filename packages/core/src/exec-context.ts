@@ -33,6 +33,9 @@ export class ExecContext {
   readonly mode: ExecMode;
   readonly invocationId: string;
   #snapshot: unknown = undefined;
+  // Protected write nodes this invocation must not execute (non-save mode),
+  // keyed by pool node identity. Decided before transformation.
+  #disabled = new WeakMap<object, { skipped: "write-disabled"; fn: string }>();
 
   constructor(identity: ExecIdentity = {}) {
     this.uid = typeof identity.uid === "string" && identity.uid ? identity.uid : null;
@@ -56,6 +59,15 @@ export class ExecContext {
       throw new Error("ExecContext snapshot is already set for this invocation");
     }
     this.#snapshot = snapshot;
+  }
+
+  disable(node: object, fn: string): void {
+    this.#disabled.set(node, Object.freeze({ skipped: "write-disabled" as const, fn }));
+  }
+
+  // The sentinel a disabled write evaluates to, or undefined when the node runs.
+  skippedResultFor(node: object): { skipped: "write-disabled"; fn: string } | undefined {
+    return node && typeof node === "object" ? this.#disabled.get(node) : undefined;
   }
 }
 

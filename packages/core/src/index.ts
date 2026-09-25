@@ -9,6 +9,14 @@
 export { Visitor, Checker, Transformer, Renderer, Compiler } from "./compiler.js";
 export { ExecContext, execContextOf } from "./exec-context.js";
 export type { ExecMode, ExecIdentity } from "./exec-context.js";
+export { findProtectedNodes } from "./protected-functions.js";
+export type {
+  ProtectedFunctionKind,
+  ProtectedFunctionSpec,
+  ProtectedFunctions,
+  PolicySnapshot,
+  PolicyClient,
+} from "./protected-functions.js";
 export { lexicon } from "./lexicon.js";
 export { mergeLexicon } from "./merge-lexicon.js";
 export type { MergeLexiconOptions } from "./merge-lexicon.js";

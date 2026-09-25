@@ -6,6 +6,7 @@ import DecimalImport from 'decimal.js';
 const Decimal: any = (DecimalImport as any)?.default ?? DecimalImport;
 import crypto from 'crypto';
 import { validateAgainstSchema, getLanguageSchema } from "./schema-validator.js";
+import { ExecContext, bindExecContext, execContextOf } from "./exec-context.js";
 
 // Decrypts secret values written by the console. Must stay in lockstep with
 // console src/lib/secret-crypto.ts. Understands two ciphertext formats:
@@ -297,6 +298,11 @@ export class Visitor {
     this.nodePool = code;
     this.root = code.root;
   }
+  // The invocation's authorization context (see exec-context.ts). Read-only here;
+  // it is bound by Compiler.compile and is never part of `options`.
+  get execContext(): ExecContext | undefined {
+    return execContextOf(this);
+  }
   visit(nid, options, resume) {
     try {
       assert(nid, "Invalid nid=" + nid);
@@ -312,7 +318,10 @@ export class Visitor {
       //   "node.tag=" + node.tag,
       //   "options=" + JSON.stringify(options, null, 2),
       // );
-      const fn = (this[node.tag] || this["CATCH_ALL"])?.bind(this);
+      // Dispatch only to methods: a tag naming a non-function member (e.g.
+      // `execContext`, `nodePool`) falls through to CATCH_ALL.
+      const own = this[node.tag];
+      const fn = (typeof own === "function" ? own : this["CATCH_ALL"])?.bind(this);
       assert(node && node.tag && node.elts, "2000: Visitor.visit() tag=" + node.tag + " elts= " + JSON.stringify(node.elts));
       assert(fn, "2000: Visitor function not defined for: " + node.tag);
       assert(typeof resume === "function", message(1003));
@@ -2123,23 +2132,31 @@ export class Compiler {
     this.Transformer = config.Transformer || Transformer;
     this.Renderer = config.Renderer || Renderer;
   }
-  compile(code, data, config, resume) {
+  compile(code, data, config, resume, identity?) {
     // Compiler takes an AST in the form of a node pool (code) and transforms it
     // into an object to be rendered on the client by the viewer for this
     // language.
+    //
+    // `identity` is the caller's VERIFIED identity and execution intent, supplied
+    // by the language server from its authenticated request context — never from
+    // program input. It becomes this invocation's ExecContext, bound to the
+    // per-compile Checker and Transformer and kept out of `options`.
     try {
       let options = {
         data: data,
         config: config,
         result: '',
       };
+      const exec = new ExecContext(identity);
       const checker = new this.Checker(code);
+      bindExecContext(checker, exec);
       checker.check(options, (err, val) => {
         const normalized = normalizeErrors(err);
         if (normalized.length > 0) {
           resume(normalized);
         } else {
           const transformer = new this.Transformer(code);
+          bindExecContext(transformer, exec);
           transformer.transform(options, (err, val) => {
             const normalized = normalizeErrors(err);
             if (normalized.length > 0) {

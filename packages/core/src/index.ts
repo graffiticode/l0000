@@ -7,6 +7,8 @@
 // child word shadow a base one unless the override is declared.
 
 export { Visitor, Checker, Transformer, Renderer, Compiler } from "./compiler.js";
+export { ExecContext, execContextOf } from "./exec-context.js";
+export type { ExecMode, ExecIdentity } from "./exec-context.js";
 export { lexicon } from "./lexicon.js";
 export { mergeLexicon } from "./merge-lexicon.js";
 export type { MergeLexiconOptions } from "./merge-lexicon.js";

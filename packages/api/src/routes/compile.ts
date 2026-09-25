@@ -8,8 +8,20 @@ const buildPostCompileHandler = ({ compile }: { compile: CompileFn }) =>
   buildHttpHandler(async (req, res) => {
     const auth = (req as any).auth?.context ?? "";
     const authToken = parseAuthTokenFromRequest(req);
+    // The body is caller input. It carries the raw token in `auth` (verified
+    // above into req.auth.context), so it must never overwrite the verified
+    // fields — spread it first, then set them.
+    const { auth: _bodyAuth, authToken: _bodyAuthToken, identity: _bodyIdentity, ...body } = req.body ?? {};
+    // Identity for this invocation's ExecContext: the uid comes only from the
+    // verified token. The connection is a caller selection, checked later
+    // against policy. The mode is not accepted from the body until the gateway
+    // authenticates as a service, so it stays at the least-privileged default.
+    const identity = {
+      uid: typeof auth === "object" && typeof auth?.uid === "string" ? auth.uid : null,
+      connectionId: typeof body.connectionId === "string" ? body.connectionId : null,
+    };
     try {
-      const data = await compile({ auth, authToken, lang: "0000", ...req.body });
+      const data = await compile({ ...body, auth, authToken, identity, lang: "0000" });
       res.set("Access-Control-Allow-Origin", "*");
       res.status(200).json(data);
     } catch (error: any) {

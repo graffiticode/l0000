@@ -16,10 +16,12 @@ export async function compile({
   code,
   data,
   config,
+  identity,
 }: {
   code?: any;
   data?: any;
   config?: any;
+  identity?: { uid?: string | null; connectionId?: string | null };
   [k: string]: any;
 }) {
   if (!code || !data) {
@@ -35,6 +37,6 @@ export async function compile({
       } else {
         resolve({ data: out, errors: [] });
       }
-    }),
+    }, identity),
   );
 }

@@ -2148,6 +2148,7 @@ export class Compiler {
     // client that fetches this invocation's policy snapshot. A language without
     // protected functions pays nothing.
     this.protectedFunctions = config.protectedFunctions || {};
+    this.implicitProtectedFunctions = config.implicitProtectedFunctions || [];
     this.policy = config.policy;
   }
   compile(code, data, config, resume, identity?) {
@@ -2190,7 +2191,7 @@ export class Compiler {
           }
         });
       };
-      if (Object.keys(this.protectedFunctions).length === 0) {
+      if (Object.keys(this.protectedFunctions).length === 0 && this.implicitProtectedFunctions.length === 0) {
         runChecker();
         return;
       }
@@ -2199,6 +2200,7 @@ export class Compiler {
       admitProtectedFunctions({
         nodePool: code,
         protectedFunctions: this.protectedFunctions,
+        implicitProtectedFunctions: this.implicitProtectedFunctions,
         exec,
         langID: this.langID,
         policy: this.policy,

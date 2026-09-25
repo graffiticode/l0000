@@ -9,7 +9,7 @@
 export { Visitor, Checker, Transformer, Renderer, Compiler } from "./compiler.js";
 export { ExecContext, execContextOf } from "./exec-context.js";
 export type { ExecMode, ExecIdentity } from "./exec-context.js";
-export { findProtectedNodes } from "./protected-functions.js";
+export { findProtectedNodes, parseSnapshot } from "./protected-functions.js";
 export type {
   ProtectedFunctionKind,
   ProtectedFunctionSpec,

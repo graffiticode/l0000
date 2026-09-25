@@ -222,6 +222,77 @@ describe("policy snapshot", () => {
   });
 });
 
+describe("malformed snapshots allow nothing", () => {
+  test.each([
+    ["a valid name next to a non-string", { allowed: ["peek-it", 123] }],
+    ["a valid name next to an empty string", { allowed: ["peek-it", ""] }],
+    ["allowed as an object", { allowed: { 0: "peek-it" } }],
+    ["no allowed field", {}],
+    ["an array response", ["peek-it"]],
+    ["null", null],
+  ])("%s", async (_, response) => {
+    const policy = {
+      async getSnapshot() {
+        return response as any;
+      },
+    };
+    const { err } = await run("peek-it 1..", { mode: "read", policy });
+    expect(err[0].message).toMatch(/peek-it is not permitted/);
+    expect(transformerRuns).toBe(0);
+  });
+});
+
+describe("implicit protected functions", () => {
+  async function runImplicit(src, { implicit, allowed = [], mode = "read" }: any) {
+    const code = await parser.parse(0, src, lex);
+    const policy = policyAllowing(allowed);
+    const compiler = new Compiler({
+      langID: "9999",
+      Checker,
+      Transformer: ToyTransformer,
+      Renderer,
+      protectedFunctions,
+      implicitProtectedFunctions: implicit,
+      policy,
+    });
+    const result = await new Promise<{ err: any[]; val: any }>((resolve) =>
+      compiler.compile(code, {}, {}, (err, val) => resolve({ err: err ?? [], val }), { uid: "u1", connectionId: "c", mode }),
+    );
+    return { ...result, policy };
+  }
+
+  test("are required even when no protected call appears in the source", async () => {
+    const { err, policy } = await runImplicit("add 1 2..", { implicit: [{ fn: "peek-it", kind: "sign" }] });
+    expect(err[0].message).toMatch(/peek-it is not permitted/);
+    expect(err[0].from).toBe(-1);
+    expect(policy.requests[0].fns).toEqual(["peek-it"]);
+    expect(transformerRuns).toBe(0);
+  });
+
+  test("run when granted", async () => {
+    const { err, val } = await runImplicit("add 1 2..", { implicit: [{ fn: "peek-it", kind: "sign" }], allowed: ["peek-it"] });
+    expect(err).toEqual([]);
+    expect(val).toBe(3);
+  });
+
+  test("share one snapshot with explicit calls", async () => {
+    const { err, policy } = await runImplicit("save-it 1..", {
+      implicit: [{ fn: "peek-it", kind: "sign" }],
+      allowed: ["peek-it", "save-it"],
+      mode: "save",
+    });
+    expect(err).toEqual([]);
+    expect(policy.requests).toHaveLength(1);
+    expect(policy.requests[0].fns.sort()).toEqual(["peek-it", "save-it"]);
+  });
+
+  test("cannot be writes", async () => {
+    const { err } = await runImplicit("add 1 2..", { implicit: [{ fn: "save-it", kind: "write" }], allowed: ["save-it"], mode: "save" });
+    expect(err[0].message).toMatch(/cannot be a write/);
+    expect(transformerRuns).toBe(0);
+  });
+});
+
 describe("languages without protected functions", () => {
   test("compile exactly as before", async () => {
     const code = await parser.parse(0, "add 1 2..", lexicon);

@@ -59,5 +59,6 @@ export interface CompilerConfig {
   Transformer?: new (code: NodePool) => any;
   Renderer?: new (data: any) => any;
   protectedFunctions?: import("./protected-functions.js").ProtectedFunctions;
+  implicitProtectedFunctions?: import("./protected-functions.js").ProtectedFunctionSpec[];
   policy?: import("./protected-functions.js").PolicyClient;
 }

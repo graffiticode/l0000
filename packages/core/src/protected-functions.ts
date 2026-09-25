@@ -7,13 +7,19 @@
 // gives early rejection so the transformer never begins a program it would have
 // to abandon halfway, after earlier external calls had already happened.
 //
-// Coverage comes from scanning EVERY node in the pool by tag, not from walking
-// the tree through checker methods. The parser lowers every call of a lexicon
-// function — top level, parenthesized, under a branch, inside a lambda, bound by
-// `let` — to a node carrying that function's tag, and the transformer only
-// dispatches on pool tags. So the scan cannot miss a node the transformer could
-// execute, and no language's Checker override can skip it. It is conservative:
-// a protected call in dead code is still admitted or refused.
+// Coverage for EXPLICIT calls comes from scanning every node in the pool by
+// tag, not from walking the tree through checker methods. The parser lowers
+// every call of a lexicon function — top level, parenthesized, under a branch,
+// inside a lambda, bound by `let` — to a node carrying that function's tag, so
+// no language's Checker override can skip one. It is conservative: a protected
+// call in dead code is still admitted or refused.
+//
+// The tag scan does NOT cover protected behavior the transformer performs
+// without a protected node in the source: implicit operations (e.g. L0176
+// signing every render in PROG) and any call a transformer constructs at run
+// time. A language must declare those as `implicitProtectedFunctions`, which
+// are admitted for every compile of that language, and must never synthesize a
+// protected node the pool did not contain.
 
 import type { ExecContext } from "./exec-context.js";
 
@@ -31,6 +37,21 @@ export type ProtectedFunctions = Record<string, ProtectedFunctionSpec>;
 export interface PolicySnapshot {
   // Function names this invocation may call through its connection.
   allowed: string[];
+}
+
+// A snapshot is accepted only if it is exactly well-formed. Anything else —
+// a non-array, a single non-string entry — is malformed, and a malformed
+// snapshot allows nothing: partially honoring it would let a corrupted or
+// mismatched response grant whatever valid-looking strings it happens to hold.
+export function parseSnapshot(snapshot: unknown): PolicySnapshot | null {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return null;
+  }
+  const allowed = (snapshot as any).allowed;
+  if (!Array.isArray(allowed) || !allowed.every((f) => typeof f === "string" && f.length > 0)) {
+    return null;
+  }
+  return { allowed: [...allowed] };
 }
 
 export interface PolicyClient {
@@ -69,23 +90,37 @@ export function findProtectedNodes(nodePool: any, protectedFunctions: ProtectedF
 //   protected functions), and it will never mint a write token;
 // - otherwise, a function missing from the policy snapshot is an error.
 // The snapshot is fetched once, only when protected nodes exist, and fails
-// closed: no policy client, or a failed fetch, means nothing is allowed.
+// closed: no policy client, a failed fetch, or a malformed response means
+// nothing is allowed.
 export async function admitProtectedFunctions({
   nodePool,
   protectedFunctions,
+  implicitProtectedFunctions = [],
   exec,
   langID,
   policy,
 }: {
   nodePool: any;
   protectedFunctions: ProtectedFunctions;
+  implicitProtectedFunctions?: ProtectedFunctionSpec[];
   exec: ExecContext;
   langID: string;
   policy?: PolicyClient;
 }): Promise<AdmissionError[]> {
-  const found = findProtectedNodes(nodePool, protectedFunctions);
+  // Implicit operations have no node; they are required by every compile.
+  const found: { node: any; spec: ProtectedFunctionSpec }[] = [
+    ...implicitProtectedFunctions.map((spec) => ({ node: null, spec })),
+    ...findProtectedNodes(nodePool, protectedFunctions),
+  ];
   if (found.length === 0) {
     return [];
+  }
+  for (const { node, spec } of found) {
+    // An implicit write has no node to disable and cannot be skipped, so it is
+    // a language bug rather than something admission can make safe.
+    if (!node && spec.kind === "write") {
+      return [errorAt(`Implicit protected function ${spec.fn} cannot be a write.`, null)];
+    }
   }
   const needsPolicy = found.filter(({ spec }) => !(spec.kind === "write" && exec.mode !== "save"));
   let allowed = new Set<string>();
@@ -93,15 +128,16 @@ export async function admitProtectedFunctions({
     const fns = [...new Set(needsPolicy.map(({ spec }) => spec.fn))];
     let snapshot: PolicySnapshot = { allowed: [] };
     if (policy && exec.uid && exec.connectionId) {
+      let response: unknown;
       try {
-        snapshot = await policy.getSnapshot({ exec, langID, fns });
+        response = await policy.getSnapshot({ exec, langID, fns });
       } catch {
         return [errorAt("Permission check is unavailable; protected functions cannot run.", null)];
       }
+      snapshot = parseSnapshot(response) ?? { allowed: [] };
     }
-    const list = Array.isArray(snapshot?.allowed) ? snapshot.allowed.filter((f) => typeof f === "string") : [];
-    exec.setSnapshot(Object.freeze({ allowed: Object.freeze([...list]) }));
-    allowed = new Set(list);
+    exec.setSnapshot(Object.freeze({ allowed: Object.freeze([...snapshot.allowed]) }));
+    allowed = new Set(snapshot.allowed);
   }
   const errors: AdmissionError[] = [];
   for (const { node, spec } of found) {

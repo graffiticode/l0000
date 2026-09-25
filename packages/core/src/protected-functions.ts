@@ -22,7 +22,7 @@
 // protected node the pool did not contain.
 
 import { EXEC_MODES } from "./exec-context.js";
-import type { ExecContext, ExecMode } from "./exec-context.js";
+import type { ExecContext, ExecMode, Invoker } from "./exec-context.js";
 
 export type ProtectedFunctionKind = "read" | "write" | "sign";
 
@@ -51,7 +51,12 @@ export type ProtectedFunctions = Record<string, ProtectedFunctionSpec>;
 export interface PolicySnapshot {
   // Function names this invocation may call through its connection.
   allowed: string[];
+  // The mode policy resolved (from a console-issued intent, or the requested
+  // non-privileged mode). Admission decides writes from this.
+  mode?: ExecMode;
 }
+
+const PRIVILEGED_MODES: readonly ExecMode[] = ["save", "author"];
 
 // A snapshot is accepted only if it is exactly well-formed. Anything else —
 // a non-array, a single non-string entry — is malformed, and a malformed
@@ -65,11 +70,18 @@ export function parseSnapshot(snapshot: unknown): PolicySnapshot | null {
   if (!Array.isArray(allowed) || !allowed.every((f) => typeof f === "string" && f.length > 0)) {
     return null;
   }
-  return { allowed: [...allowed] };
+  const mode = (snapshot as any).mode;
+  if (mode !== undefined && !EXEC_MODES.includes(mode)) {
+    return null;
+  }
+  return mode === undefined ? { allowed: [...allowed] } : { allowed: [...allowed], mode };
 }
 
 export interface PolicyClient {
   getSnapshot(args: { exec: ExecContext; langID: string; fns: string[] }): Promise<PolicySnapshot>;
+  // Performs one admitted protected call (mint, then broker). Optional: a
+  // client without it admits but cannot execute.
+  invoke?: Invoker;
 }
 
 export interface AdmissionError {
@@ -140,23 +152,28 @@ export async function admitProtectedFunctions({
       return [errorAt(`Protected write ${spec.fn} may only run in save mode.`, null)];
     }
   }
-  const needsPolicy = found.filter(({ spec }) => runsIn(spec, exec));
-  let allowed = new Set<string>();
-  if (needsPolicy.length > 0) {
-    const fns = [...new Set(needsPolicy.map(({ spec }) => spec.fn))];
-    let snapshot: PolicySnapshot = { allowed: [] };
-    if (policy && exec.uid && exec.connectionId) {
-      let response: unknown;
-      try {
-        response = await policy.getSnapshot({ exec, langID, fns });
-      } catch {
-        return [errorAt("Permission check is unavailable; protected functions cannot run.", null)];
-      }
-      snapshot = parseSnapshot(response) ?? { allowed: [] };
+  // One snapshot per compile, covering every protected function present. It
+  // also resolves the mode: with a policy client, a privileged mode is never
+  // taken from the request, only from policy's answer.
+  let snapshot: PolicySnapshot = { allowed: [] };
+  if (policy && exec.uid && exec.connectionId) {
+    const fns = [...new Set(found.map(({ spec }) => spec.fn))];
+    let response: unknown;
+    try {
+      response = await policy.getSnapshot({ exec, langID, fns });
+    } catch {
+      return [errorAt("Permission check is unavailable; protected functions cannot run.", null)];
     }
-    exec.setSnapshot(Object.freeze({ allowed: Object.freeze([...snapshot.allowed]) }));
-    allowed = new Set(snapshot.allowed);
+    snapshot = parseSnapshot(response) ?? { allowed: [] };
+    exec.resolveMode(snapshot.mode ?? (PRIVILEGED_MODES.includes(exec.mode) ? "read" : exec.mode));
+    if (typeof policy.invoke === "function") {
+      exec.bindInvoker(policy.invoke);
+    }
+  } else if (policy && PRIVILEGED_MODES.includes(exec.mode)) {
+    exec.resolveMode("read");
   }
+  exec.setSnapshot(Object.freeze({ allowed: Object.freeze([...snapshot.allowed]) }));
+  const allowed = new Set(snapshot.allowed);
   const errors: AdmissionError[] = [];
   for (const { node, spec } of found) {
     if (!runsIn(spec, exec)) {

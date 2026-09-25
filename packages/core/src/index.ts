@@ -8,8 +8,11 @@
 
 export { Visitor, Checker, Transformer, Renderer, Compiler } from "./compiler.js";
 export { ExecContext, execContextOf, EXEC_MODES } from "./exec-context.js";
-export type { ExecMode, ExecIdentity, SkippedResult } from "./exec-context.js";
+export type { ExecMode, ExecIdentity, SkippedResult, ProtectedCall, Invoker } from "./exec-context.js";
 export { findProtectedNodes, parseSnapshot, permittedModes } from "./protected-functions.js";
+export { createProtectionClient, ProtectedCallError, POLICY_AUDIENCE, BROKER_AUDIENCE } from "./protected-client.js";
+export type { ProtectionClientOptions } from "./protected-client.js";
+export { canonicalJSON, argsDigest } from "./canonical.js";
 export type {
   ProtectedFunctionKind,
   ProtectedFunctionSpec,

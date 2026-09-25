@@ -21,7 +21,7 @@ export async function compile({
   code?: any;
   data?: any;
   config?: any;
-  identity?: { uid?: string | null; connectionId?: string | null };
+  identity?: Record<string, any>;
   [k: string]: any;
 }) {
   if (!code || !data) {

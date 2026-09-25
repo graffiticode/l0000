@@ -47,9 +47,10 @@ class ToyTransformer extends Transformer {
 function policyAllowing(allowed: string[]) {
   const policy = {
     requests: [] as any[],
+    // Echoes the requested mode, as policy does for a mode it accepts.
     async getSnapshot(args) {
       policy.requests.push(args);
-      return { allowed };
+      return { allowed, mode: args.exec.mode };
     },
   };
   return policy;
@@ -149,10 +150,11 @@ describe("non-save modes", () => {
     expect(calls).toEqual([]);
   });
 
-  test("a write never consults policy in read mode", async () => {
+  test("a write in read mode is disabled even when policy allows the function", async () => {
     const policy = policyAllowing(["save-it"]);
-    await run("save-it 1..", { mode: "read", policy });
-    expect(policy.requests).toEqual([]);
+    const { val } = await run("save-it 1..", { mode: "read", policy });
+    expect(val).toEqual({ skipped: "write-disabled", fn: "save-it" });
+    expect(calls).toEqual([]);
   });
 
   test("an ungranted read is still refused", async () => {
@@ -311,7 +313,7 @@ describe("mode-restricted functions", () => {
     expect(err).toEqual([]);
     expect(val).toEqual({ skipped: "mode-disabled", fn: "edit-it" });
     expect(calls).toEqual([]);
-    expect(policy.requests.map((r) => r.fns)).toEqual([["peek-it"]]);
+    expect(policy.requests).toHaveLength(1);
   });
 
   test("run in their mode when granted", async () => {

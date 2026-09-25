@@ -33,14 +33,38 @@ export interface SkippedResult {
 export interface ExecIdentity {
   uid?: string | null;
   connectionId?: string | null;
+  // The mode the caller asks for. Privileged modes (`save`, `author`) are
+  // honored only when policy resolves them from a console-issued intent; see
+  // resolveMode.
   mode?: ExecMode;
+  // Forwarded to policy only; never exposed as properties.
+  userToken?: string | null;
+  intentToken?: string | null;
 }
+
+// What a language's transformer asks the broker to do for one protected call.
+export interface ProtectedCall {
+  fn: string;
+  op: string;
+  payload: unknown;
+  // Stable within the invocation for the same node and ordinal (see
+  // nextOccurrence), so a retried save reproduces the same operation ids.
+  occurrenceId: string;
+}
+
+export type Invoker = (exec: ExecContext, call: ProtectedCall) => Promise<any>;
 
 export class ExecContext {
   readonly uid: string | null;
   readonly connectionId: string | null;
-  readonly mode: ExecMode;
   readonly invocationId: string;
+  #mode: ExecMode;
+  #modeResolved = false;
+  #userToken: string | null;
+  #intentToken: string | null;
+  #sessionToken: string | null = null;
+  #invoker: Invoker | null = null;
+  #occurrences = new Map<string, number>();
   #snapshot: unknown = undefined;
   // Protected write nodes this invocation must not execute (non-save mode),
   // keyed by pool node identity. Decided before transformation.
@@ -52,9 +76,75 @@ export class ExecContext {
       typeof identity.connectionId === "string" && identity.connectionId ? identity.connectionId : null;
     // Least privilege by default: only an authenticated entry point that means to
     // save may say so. An unknown mode is a caller bug, not a request to save.
-    this.mode = identity.mode && EXEC_MODES.includes(identity.mode) ? identity.mode : "read";
+    this.#mode = identity.mode && EXEC_MODES.includes(identity.mode) ? identity.mode : "read";
+    this.#userToken = typeof identity.userToken === "string" && identity.userToken ? identity.userToken : null;
+    this.#intentToken = typeof identity.intentToken === "string" && identity.intentToken ? identity.intentToken : null;
     this.invocationId = randomUUID();
     Object.freeze(this);
+  }
+
+  get mode(): ExecMode {
+    return this.#mode;
+  }
+
+  // Policy's answer replaces the requested mode, once, before any protected
+  // node is decided. This is how an intent's `save` reaches admission, and how
+  // a request that claimed a privileged mode without an intent is lowered.
+  resolveMode(mode: ExecMode): void {
+    if (this.#modeResolved) {
+      throw new Error("ExecContext mode is already resolved for this invocation");
+    }
+    if (!EXEC_MODES.includes(mode)) {
+      throw new Error(`unknown execution mode ${mode}`);
+    }
+    this.#mode = mode;
+    this.#modeResolved = true;
+  }
+
+  // Credentials a policy client forwards. Language code may read them; no
+  // program can (the context is unreachable from the AST).
+  policyCredentials(): { userToken: string | null; intentToken: string | null } {
+    return { userToken: this.#userToken, intentToken: this.#intentToken };
+  }
+
+  get sessionToken(): string | null {
+    return this.#sessionToken;
+  }
+
+  setSessionToken(token: string): void {
+    if (this.#sessionToken !== null) {
+      throw new Error("ExecContext session is already set for this invocation");
+    }
+    this.#sessionToken = token;
+  }
+
+  // Deterministic occurrence ids: the Nth protected call made from the same
+  // node in this invocation is `<key>.<N>`. A retry that follows the same path
+  // reproduces them; a loop calling one node repeatedly gets distinct ones.
+  nextOccurrence(key: string): string {
+    const n = this.#occurrences.get(key) ?? 0;
+    this.#occurrences.set(key, n + 1);
+    return `${key}.${n}`;
+  }
+
+  bindInvoker(invoker: Invoker): void {
+    if (this.#invoker !== null) {
+      throw new Error("ExecContext invoker is already bound");
+    }
+    this.#invoker = invoker;
+  }
+
+  // The only way a language performs a protected operation. Refuses anything
+  // admission did not allow, before any network call.
+  async invoke(call: ProtectedCall): Promise<any> {
+    const allowed = (this.#snapshot as any)?.allowed;
+    if (!Array.isArray(allowed) || !allowed.includes(call.fn)) {
+      throw new Error(`${call.fn} was not admitted for this invocation`);
+    }
+    if (!this.#invoker) {
+      throw new Error("no protected-operation client is configured");
+    }
+    return this.#invoker(this, call);
   }
 
   // The policy snapshot is fetched once per compile and is immutable for the

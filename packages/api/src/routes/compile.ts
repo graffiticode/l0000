@@ -4,6 +4,8 @@ import { buildHttpHandler, parseAuthTokenFromRequest, optionsHandler } from "./u
 
 type CompileFn = (args: Record<string, any>) => Promise<any>;
 
+const NON_PRIVILEGED_MODES = ["read", "render", "verify", "corpus"];
+
 const buildPostCompileHandler = ({ compile }: { compile: CompileFn }) =>
   buildHttpHandler(async (req, res) => {
     const auth = (req as any).auth?.context ?? "";
@@ -13,12 +15,17 @@ const buildPostCompileHandler = ({ compile }: { compile: CompileFn }) =>
     // fields — spread it first, then set them.
     const { auth: _bodyAuth, authToken: _bodyAuthToken, identity: _bodyIdentity, ...body } = req.body ?? {};
     // Identity for this invocation's ExecContext: the uid comes only from the
-    // verified token. The connection is a caller selection, checked later
-    // against policy. The mode is not accepted from the body until the gateway
-    // authenticates as a service, so it stays at the least-privileged default.
+    // verified token, which is also what policy re-verifies (userToken). The
+    // connection is a caller selection, checked by policy. A privileged mode
+    // (save/author) is never taken from the body: it comes only from policy
+    // resolving the console-issued intent token forwarded here.
+    const uid = typeof auth === "object" && typeof auth?.uid === "string" ? auth.uid : null;
     const identity = {
-      uid: typeof auth === "object" && typeof auth?.uid === "string" ? auth.uid : null,
+      uid,
       connectionId: typeof body.connectionId === "string" ? body.connectionId : null,
+      userToken: uid ? authToken : null,
+      intentToken: typeof body.intentToken === "string" ? body.intentToken : null,
+      mode: NON_PRIVILEGED_MODES.includes(body.mode) ? body.mode : undefined,
     };
     try {
       const data = await compile({ ...body, auth, authToken, identity, lang: "0000" });

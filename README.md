@@ -1,3 +1,8 @@
+> **Moved.** This repository is archived. l0000 now lives in the Graffiticode monorepo at
+> [`languages/l0000`](https://github.com/graffiticode/graffiticode/tree/main/languages/l0000),
+> with this repository's history. `@graffiticode/l0000` and `@graffiticode/l0000-view` are
+> published from there, and the `l0000` service is released with its deploy CLI.
+
 # L0000
 
 The root Graffiticode language: base compiler, lexicon, and inheritance contract that child languages extend.
